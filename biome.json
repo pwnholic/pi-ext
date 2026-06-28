@@ -1,0 +1,70 @@
+{
+    "$schema": "https://biomejs.dev/schemas/2.4.16/schema.json",
+    "vcs": {
+        "enabled": true,
+        "clientKind": "git",
+        "useIgnoreFile": true
+    },
+    "files": {
+        "ignoreUnknown": true,
+        "includes": [
+            "**/*.ts",
+            "**/*.js",
+            "**/*.json",
+            "**/*.cjs",
+            "**/*.mjs",
+            "!dist",
+            "!coverage",
+            "!node_modules",
+            "!pi-web-access",
+            "!package-lock.json"
+        ]
+    },
+    "formatter": {
+        "enabled": true,
+        "indentStyle": "space",
+        "indentWidth": 4,
+        "lineWidth": 100,
+        "lineEnding": "lf"
+    },
+    "linter": {
+        "enabled": true,
+        "rules": {
+            "recommended": true,
+            "correctness": {
+                "noUnusedVariables": "error",
+                "noUnusedImports": "error"
+            },
+            "style": {
+                "useImportType": "error",
+                "useNodejsImportProtocol": "error",
+                "useNamingConvention": "off"
+            },
+            "suspicious": {
+                "noExplicitAny": "error",
+                "noFallthroughSwitchClause": "error"
+            }
+        }
+    },
+    "javascript": {
+        "formatter": {
+            "quoteStyle": "single",
+            "semicolons": "always",
+            "trailingCommas": "all",
+            "arrowParentheses": "always",
+            "bracketSpacing": true
+        }
+    },
+    "overrides": [
+        {
+            "includes": ["**/*.test.ts", "tests/**"],
+            "linter": {
+                "rules": {
+                    "suspicious": {
+                        "noExplicitAny": "off"
+                    }
+                }
+            }
+        }
+    ]
+}
