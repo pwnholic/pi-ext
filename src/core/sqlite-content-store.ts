@@ -50,6 +50,7 @@ export class SqliteContentStore implements ContentStore {
     private readonly selectDocuments: StatementSync;
     private readonly selectSections: StatementSync;
     private readonly searchStmt: StatementSync;
+    private closed = false;
 
     constructor(private readonly config: SqliteContentStoreConfig) {
         this.db = new DatabaseSync(config.path ?? ':memory:');
@@ -160,6 +161,8 @@ export class SqliteContentStore implements ContentStore {
     }
 
     close(): void {
+        if (this.closed) return;
+        this.closed = true;
         this.db.close();
     }
 

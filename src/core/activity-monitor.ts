@@ -6,10 +6,7 @@ export interface ActivityEntry {
     readonly id: string;
     readonly kind: ActivityKind;
     readonly label: string;
-    readonly status: 'running' | 'ok' | 'error';
     readonly startedAt: number;
-    endedAt?: number;
-    detail?: string;
 }
 
 export type ActivityListener = (entries: readonly ActivityEntry[]) => void;
@@ -33,14 +30,12 @@ export class ActivityMonitor {
     }
 
     start(id: string, kind: ActivityKind, label: string): void {
-        this.entries.set(id, { id, kind, label, status: 'running', startedAt: Date.now() });
+        this.entries.set(id, { id, kind, label, startedAt: Date.now() });
         this.notify();
     }
 
-    end(id: string, status: 'ok' | 'error', detail: string): void {
-        const entry = this.entries.get(id);
-        if (!entry) return;
-        this.entries.set(id, { ...entry, status, detail, endedAt: Date.now() });
+    end(id: string): void {
+        this.entries.delete(id);
         this.notify();
     }
 

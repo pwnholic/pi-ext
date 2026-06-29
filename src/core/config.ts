@@ -107,13 +107,12 @@ function parseLogLevel(value: string | undefined): LogLevel | undefined {
 }
 
 /**
- * Read the JSON config file from `$PI_CODING_AGENT_DIR`, `$XDG_CONFIG_HOME/pi`,
- * or `~/.pi`. Missing or malformed files yield an empty partial (defaults win).
+ * Read the JSON config file from `$PI_CODING_AGENT_DIR` or `~/.pi` (the Pi
+ * config directory). Missing or malformed files yield an empty partial
+ * (defaults win).
  */
 export function loadConfigFile(env: NodeJS.ProcessEnv = process.env): Partial<AppConfig> {
-    const dir =
-        env.PI_CODING_AGENT_DIR ??
-        (env.XDG_CONFIG_HOME ? join(env.XDG_CONFIG_HOME, 'pi') : join(homedir(), '.pi'));
+    const dir = env.PI_CODING_AGENT_DIR ?? join(homedir(), '.pi');
     try {
         return JSON.parse(readFileSync(join(dir, 'web-access.json'), 'utf8')) as Partial<AppConfig>;
     } catch {

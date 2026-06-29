@@ -1,3 +1,4 @@
+import { Type } from 'typebox';
 import {
     type ContentStore,
     renderHits,
@@ -33,18 +34,15 @@ export function createGetContentTool(content: ContentStore): ToolDefinition<GetC
             '`section`: returns that one section in full. ' +
             '`query`: rank-searches sections and returns the most relevant ones. ' +
             '`index` selects a document when multiple URLs were fetched.',
-        parameters: {
-            type: 'object',
-            properties: {
-                responseId: { type: 'string' },
-                index: { type: 'number' },
-                section: { type: 'string' },
-                query: { type: 'string' },
-                offset: { type: 'number' },
-                limit: { type: 'number' },
-            },
-            required: ['responseId'],
-        },
+        promptSnippet: 'Pull a stored page section or rank-search stored content by responseId',
+        parameters: Type.Object({
+            responseId: Type.String(),
+            index: Type.Optional(Type.Number()),
+            section: Type.Optional(Type.String()),
+            query: Type.Optional(Type.String()),
+            offset: Type.Optional(Type.Number()),
+            limit: Type.Optional(Type.Number()),
+        }),
         execute(params): Promise<ToolTextResult> {
             return Promise.resolve(run(content, params));
         },

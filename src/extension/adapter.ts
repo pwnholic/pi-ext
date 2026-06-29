@@ -1,91 +1,95 @@
-import { toError } from '../core/errors.js';
+import { complete } from '@earendil-works/pi-ai/compat';
+import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import { appError, toError } from '../core/errors.js';
 import type { CompletionRequest, LlmClient } from '../core/llm.js';
-import { fromPromise, type Result } from '../core/result.js';
-import type { ExtensionHost, ToolDefinition, WidgetHandle } from './ports.js';
+import { err, fromPromise, ok, type Result } from '../core/result.js';
+import type { ExtensionHost, ToolDefinition } from './ports.js';
 
 /**
- * Minimal description of the Pi extension API surface this extension touches.
- * It mirrors `@earendil-works/pi-coding-agent`'s `ExtensionAPI` loosely so the
- * adapter is the SINGLE file to reconcile when the real SDK is wired in. Core
- * and modules never see this type.
+ * Adapter for the concrete Pi ExtensionAPI. This is the only file that depends
+ * on the host SDK's exact shape; core/modules stay SDK-free.
+ *
+ * Pi passes a fresh `ExtensionContext` per session and tool call. We capture the
+ * latest one via `getCtx` so the host port (widgets, notifications) and the
+ * LLM client (active model) can reach it.
  */
-export interface PiHostApi {
-    registerTool(tool: {
-        name: string;
-        label: string;
-        description: string;
-        parameters: unknown;
-        execute: (callId: string, params: unknown, signal: AbortSignal) => Promise<unknown>;
-    }): void;
-    on(event: 'session_shutdown', handler: () => void | Promise<void>): void;
-    ui?: {
-        notify?: (message: string, level?: string) => void;
-        setWidget?: (id: string, content: string | undefined) => void;
-    };
-    /** Optional model access provided by the Pi runtime (no extra API key). */
-    complete?: (args: {
-        messages: readonly { role: string; content: string }[];
-        model?: string;
-        temperature?: number;
-        maxTokens?: number;
-    }) => Promise<string>;
-}
+export type GetExtensionContext = () => ExtensionContext | undefined;
 
-/**
- * Builds an LlmClient backed by Pi's own model access. Returns undefined when
- * the host exposes no `complete`, so summarization degrades gracefully.
- */
-export function createPiLlmClient(pi: PiHostApi): LlmClient | undefined {
-    const complete = pi.complete;
-    if (!complete) return undefined;
-    return {
-        name: 'pi',
-        isAvailable: () => true,
-        complete(request: CompletionRequest): Promise<Result<string>> {
-            return fromPromise(
-                complete({
-                    messages: request.messages,
-                    ...(request.model ? { model: request.model } : {}),
-                    ...(request.temperature !== undefined
-                        ? { temperature: request.temperature }
-                        : {}),
-                    ...(request.maxTokens !== undefined ? { maxTokens: request.maxTokens } : {}),
-                }),
-                (cause) => toError(cause, 'pi-llm'),
-            );
-        },
-    };
-}
-
-/**
- * Adapts the concrete Pi API to our ExtensionHost port. This is the only place
- * that depends on the host's exact shape.
- */
-export function createHost(pi: PiHostApi): ExtensionHost {
+export function createHost(pi: ExtensionAPI, getCtx: GetExtensionContext): ExtensionHost {
     return {
         registerTool<P>(tool: ToolDefinition<P>): void {
             pi.registerTool({
                 name: tool.name,
                 label: tool.label,
                 description: tool.description,
-                // Tools declare JSON-Schema-shaped parameters. Pi's SDK uses typebox,
-                // which is JSON-Schema-compatible; convert here if a future SDK
-                // version requires concrete `Type.Object(...)` instances.
-                parameters: tool.parameters,
-                execute: (_callId, params, signal) => tool.execute(params as P, signal),
+                ...(tool.promptSnippet ? { promptSnippet: tool.promptSnippet } : {}),
+                parameters: tool.parameters as never,
+                async execute(_toolCallId, params, signal) {
+                    const result = await tool.execute(
+                        params as P,
+                        signal ?? new AbortController().signal,
+                    );
+                    return {
+                        content: result.content as never,
+                        details: result.details ?? {},
+                    };
+                },
             });
         },
         onSessionShutdown(handler) {
-            pi.on('session_shutdown', handler);
+            pi.on('session_shutdown', () => void handler());
         },
         notify(message, level = 'info') {
-            pi.ui?.notify?.(message, level);
+            getCtx()?.ui.notify(message, level === 'warn' ? 'warning' : level);
         },
-        widget(id): WidgetHandle {
-            return {
-                set: (content) => pi.ui?.setWidget?.(id, content),
-                remove: () => pi.ui?.setWidget?.(id, undefined),
-            };
+    };
+}
+
+/**
+ * LLM client backed by Pi's active model via `@earendil-works/pi-ai/compat`.
+ * Uses the model resolved on the current session context, so summarization
+ * needs no separate API key. Returns provider_unavailable when no model is set.
+ */
+export function createPiLlmClient(getCtx: GetExtensionContext): LlmClient {
+    return {
+        name: 'pi',
+        isAvailable: () => Boolean(getCtx()?.model),
+        complete(request: CompletionRequest, signal?: AbortSignal): Promise<Result<string>> {
+            const ctx = getCtx();
+            const model = ctx?.model;
+            if (!model) {
+                return Promise.resolve(
+                    err(
+                        appError('provider_unavailable', 'No active model for summarization', {
+                            source: 'pi-llm',
+                        }),
+                    ),
+                );
+            }
+            const system = request.messages.find((m) => m.role === 'system')?.content;
+            const userContent = request.messages
+                .filter((m) => m.role !== 'system')
+                .map((m) => m.content)
+                .join('\n\n');
+            return fromPromise(
+                (async () => {
+                    const assistant = await complete(
+                        model,
+                        {
+                            ...(system ? { systemPrompt: system } : {}),
+                            messages: [
+                                { role: 'user', content: userContent, timestamp: Date.now() },
+                            ],
+                        },
+                        signal ? { signal } : undefined,
+                    );
+                    return assistant.content
+                        .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
+                        .map((c) => c.text)
+                        .join('');
+                })(),
+                (cause) => toError(cause, 'pi-llm'),
+            ).then((r) => (r.ok ? ok(r.value) : r));
         },
     };
 }

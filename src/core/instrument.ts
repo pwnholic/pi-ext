@@ -27,11 +27,10 @@ export async function instrument<T>(
     const result = await op();
 
     if (result.ok) {
-        const detail = describe(result.value);
-        inst.monitor.end(id, 'ok', detail);
-        inst.logger.info(`${kind}.ok`, { id, detail });
+        inst.monitor.end(id);
+        inst.logger.info(`${kind}.ok`, { id, detail: describe(result.value) });
     } else {
-        inst.monitor.end(id, 'error', result.error.message);
+        inst.monitor.end(id);
         inst.logger.warn(`${kind}.failed`, { id, error: result.error.message });
     }
     return result;

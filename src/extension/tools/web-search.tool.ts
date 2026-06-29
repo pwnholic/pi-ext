@@ -1,3 +1,4 @@
+import { Type } from 'typebox';
 import type { Searcher } from '../../modules/search/search.service.js';
 import type { SearchQuery } from '../../modules/search/search.types.js';
 import type { ToolDefinition, ToolTextResult } from '../ports.js';
@@ -22,16 +23,22 @@ export function createWebSearchTool(service: Searcher): ToolDefinition<WebSearch
         description:
             'Search the web via Exa and return synthesized results with sources. ' +
             'Prefer `queries` (2-4 varied angles) over a single `query` for broader coverage.',
-        parameters: {
-            type: 'object',
-            properties: {
-                query: { type: 'string' },
-                queries: { type: 'array', items: { type: 'string' } },
-                numResults: { type: 'number' },
-                recency: { type: 'string', enum: ['day', 'week', 'month', 'year'] },
-                domains: { type: 'array', items: { type: 'string' } },
-            },
-        },
+        promptSnippet:
+            'Search the web via Exa for research; prefer queries (plural) for broader coverage',
+        parameters: Type.Object({
+            query: Type.Optional(Type.String()),
+            queries: Type.Optional(Type.Array(Type.String())),
+            numResults: Type.Optional(Type.Number()),
+            recency: Type.Optional(
+                Type.Union([
+                    Type.Literal('day'),
+                    Type.Literal('week'),
+                    Type.Literal('month'),
+                    Type.Literal('year'),
+                ]),
+            ),
+            domains: Type.Optional(Type.Array(Type.String())),
+        }),
         async execute(params, signal): Promise<ToolTextResult> {
             const texts = params.queries ?? (params.query ? [params.query] : []);
             if (texts.length === 0) {

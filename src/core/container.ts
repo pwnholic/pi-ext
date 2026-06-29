@@ -68,6 +68,7 @@ export function createContainer(options: ContainerOptions = {}): Container {
     const fetch = buildFetcher(new FetchService({ logger, providers: [impers] }), inst, cache);
     const summarize = buildSummarizer(new SummarizeService({ logger, llm: options.llm }), inst);
 
+    let disposed = false;
     return {
         config,
         logger,
@@ -77,6 +78,8 @@ export function createContainer(options: ContainerOptions = {}): Container {
         fetch,
         summarize,
         async dispose() {
+            if (disposed) return;
+            disposed = true;
             activity.clear();
             content.close();
             await impers.close();

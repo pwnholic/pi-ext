@@ -1,3 +1,4 @@
+import { Type } from 'typebox';
 import { type ContentStore, renderDocOutline, type StoredDoc } from '../../core/content-store.js';
 import { buildSections } from '../../core/sections.js';
 import type { Fetcher } from '../../modules/fetch/fetch.service.js';
@@ -39,17 +40,18 @@ export function createFetchContentTool(deps: FetchContentDeps): ToolDefinition<F
             'Bypasses common bot protection via browser TLS/HTTP fingerprint impersonation. ' +
             'Large pages return a section outline (retrieve detail with get_content) to keep the context lean. ' +
             'Set `summarize: true` to return a concise LLM summary instead.',
-        parameters: {
-            type: 'object',
-            properties: {
-                url: { type: 'string' },
-                urls: { type: 'array', items: { type: 'string' } },
-                impersonate: { type: 'string' },
-                summarize: { type: 'boolean' },
-                summaryStyle: { type: 'string', enum: ['sentences', 'bullets'] },
-                summarySentences: { type: 'number' },
-            },
-        },
+        promptSnippet:
+            'Fetch URL(s) via impers with browser TLS impersonation; large pages return a section outline',
+        parameters: Type.Object({
+            url: Type.Optional(Type.String()),
+            urls: Type.Optional(Type.Array(Type.String())),
+            impersonate: Type.Optional(Type.String()),
+            summarize: Type.Optional(Type.Boolean()),
+            summaryStyle: Type.Optional(
+                Type.Union([Type.Literal('sentences'), Type.Literal('bullets')]),
+            ),
+            summarySentences: Type.Optional(Type.Number()),
+        }),
         async execute(params, signal): Promise<ToolTextResult> {
             const urls = params.urls ?? (params.url ? [params.url] : []);
             if (urls.length === 0) {
