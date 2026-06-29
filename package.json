@@ -1,7 +1,6 @@
 {
-    "name": "pi-ext",
+    "name": "pi-pwnholic",
     "version": "0.1.0",
-    "description": "Web search (Exa), content fetch (impers), and section-aware retrieval for the Pi coding agent.",
     "type": "module",
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
@@ -17,7 +16,7 @@
     ],
     "pi": {
         "extensions": [
-            "./pi-pwnholic/src/index.ts"
+            "./src/index.ts"
         ]
     },
     "engines": {

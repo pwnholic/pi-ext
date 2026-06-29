@@ -1,7 +1,7 @@
 /**
  * Boilerplate / noise detection.
  *
- * Ported to TypeScript from webclaw's `webclaw-core/src/noise.rs`
+ * Ported to TypeScript from webclaw's `webclaw-cor./src/noise.rs`
  * (https://github.com/0xMassi/webclaw, MIT License, (c) 0xMassi). The pattern
  * tables, exact-token matching, form/ad heuristics, the 5000-char safety valve,
  * and cookie-consent prefixes follow that implementation.

@@ -1,7 +1,7 @@
 /**
  * Post-processing for LLM responses: strip chain-of-thought reasoning tags
  * (qwen3 and similar emit `<think>...</think>`). Ported from webclaw's
- * `webclaw-llm/src/clean.rs` (https://github.com/0xMassi/webclaw, MIT, (c) 0xMassi).
+ * `webclaw-ll./src/clean.rs` (https://github.com/0xMassi/webclaw, MIT, (c) 0xMassi).
  */
 export function stripThinkingTags(text: string): string {
     let result = '';

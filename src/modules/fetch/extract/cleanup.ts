@@ -1,7 +1,7 @@
 /**
  * Whitespace cleanup for extracted markdown.
  *
- * Ported to TypeScript from webclaw's `webclaw-core/src/markdown.rs`
+ * Ported to TypeScript from webclaw's `webclaw-cor./src/markdown.rs`
  * (https://github.com/0xMassi/webclaw, MIT License, (c) 0xMassi):
  * code-fence-aware whitespace collapsing.
  */

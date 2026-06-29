@@ -20,7 +20,7 @@ function fakeSearchResponse(query: string): SearchResponse {
 function fakeAnswerResponse(query: string): AnswerResponse {
     return {
         answer: `Answer to: ${query}`,
-        citations: [{ title: 'C', url: 'https://src.com' }],
+        citations: [{ title: 'C', url: 'https:./src.com' }],
         tookMs: 1,
     };
 }

@@ -1,9 +1,9 @@
 /**
  * DOM-to-markdown conversion.
  *
- * Ported to TypeScript from webclaw's `webclaw-core/src/markdown.rs`
+ * Ported to TypeScript from webclaw's `webclaw-cor./src/markdown.rs`
  * (https://github.com/0xMassi/webclaw, MIT License, (c) 0xMassi). Per-tag
- * handling, lazy-image/srcset resolution, fenced code with language detection,
+ * handling, lazy-imag./srcset resolution, fenced code with language detection,
  * layout-vs-data table detection, nested lists, inline-separator heuristics,
  * and the preformatted-text collector follow that implementation.
  */

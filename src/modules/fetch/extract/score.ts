@@ -1,7 +1,7 @@
 /**
  * Readability-style node scoring.
  *
- * Ported to TypeScript from webclaw's `webclaw-core/src/extractor.rs`
+ * Ported to TypeScript from webclaw's `webclaw-cor./src/extractor.rs`
  * (https://github.com/0xMassi/webclaw, MIT License, (c) 0xMassi). Weights,
  * the log-scaled text base, paragraph bonus, and the link-density penalties
  * (milder for semantic nodes) follow that implementation.
