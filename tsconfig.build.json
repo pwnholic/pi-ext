@@ -2,8 +2,8 @@
     "extends": "./tsconfig.json",
     "compilerOptions": {
         "noEmit": false,
-        "rootDir": "./src"
+        "rootDir": "./pi-pwnholic/src"
     },
-    "include": ["src/**/*"],
+    "include": ["pi-pwnholic/src/**/*"],
     "exclude": ["tests", "**/*.test.ts", "**/*.spec.ts"]
 }

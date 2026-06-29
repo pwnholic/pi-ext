@@ -23,5 +23,5 @@
         "skipLibCheck": true,
         "isolatedModules": true
     },
-    "include": ["src/**/*", "tests/**/*"]
+    "include": ["pi-pwnholic/src/**/*", "pi-pwnholic/tests/**/*"]
 }
