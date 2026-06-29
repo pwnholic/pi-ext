@@ -99,4 +99,21 @@ describe('presentation', () => {
     it('renders a no-match message for an empty search', () => {
         expect(renderHits([], 'zzz')).toContain('No matches');
     });
+
+    it('labels chunked heading-less sections by their part name, not all (intro)', () => {
+        // A long heading-less doc is chunked into part 1, part 2, ... at level 0.
+        const big = `${'word '.repeat(2000)}`;
+        const doc: StoredDoc = {
+            url: 'https://x.com',
+            title: 'Big',
+            sections: buildSections(big, 500),
+            fullContent: big,
+            totalChars: big.length,
+        };
+        const outline = renderDocOutline(doc, 0);
+        expect(outline).toContain('part 1');
+        expect(outline).toContain('part 2');
+        // Only a genuine empty-heading intro would show "(intro)".
+        expect(outline).not.toContain('(intro)');
+    });
 });

@@ -22,17 +22,12 @@ export function nodeToMd(el: Element, ctx: Ctx, listDepth: number, depth: number
     const tag = tagName(el);
     switch (tag) {
         case 'h1':
-            return `\n\n# ${inlineText(el, ctx, depth)}\n\n`;
         case 'h2':
-            return `\n\n## ${inlineText(el, ctx, depth)}\n\n`;
         case 'h3':
-            return `\n\n### ${inlineText(el, ctx, depth)}\n\n`;
         case 'h4':
-            return `\n\n#### ${inlineText(el, ctx, depth)}\n\n`;
         case 'h5':
-            return `\n\n##### ${inlineText(el, ctx, depth)}\n\n`;
         case 'h6':
-            return `\n\n###### ${inlineText(el, ctx, depth)}\n\n`;
+            return headingToMd(el, ctx, depth, tag);
         case 'p':
             return `\n\n${inlineText(el, ctx, depth)}\n\n`;
         case 'a':
@@ -79,6 +74,20 @@ export function nodeToMd(el: Element, ctx: Ctx, listDepth: number, depth: number
         default:
             return childrenToMd(el, ctx, listDepth, depth);
     }
+}
+
+/**
+ * Render a heading. Heading text is sometimes wrapped in an anchor carrying a
+ * noise class (e.g. mdBook's `<a class="header">`), which `inlineText` would
+ * drop, leaving a bare `#`. Fall back to the element's raw text content, and
+ * skip the heading entirely when there is genuinely no text.
+ */
+function headingToMd(el: Element, ctx: Ctx, depth: number, tag: string): string {
+    const level = Number(tag[1]);
+    let text = inlineText(el, ctx, depth).trim();
+    if (text === '') text = (el.textContent ?? '').replace(/\s+/g, ' ').trim();
+    if (text === '') return '';
+    return `\n\n${'#'.repeat(level)} ${text}\n\n`;
 }
 
 function childrenToMd(el: Element, ctx: Ctx, listDepth: number, depth: number): string {

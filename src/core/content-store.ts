@@ -119,7 +119,9 @@ export function renderDocOutline(doc: StoredDoc, index: number): string {
     const head = `[${index}] ${doc.title || doc.url}\n<${doc.url}> — ${formatChars(doc.totalChars)}, ${doc.sections.length} section(s)`;
     const lines = doc.sections.map((s) => {
         const indent = '  '.repeat(s.level === 0 ? 0 : s.level - 1);
-        const marker = s.level === 0 ? '(intro)' : `${'#'.repeat(s.level)} ${s.heading}`;
+        const marker = s.heading
+            ? `${s.level > 0 ? `${'#'.repeat(s.level)} ` : ''}${s.heading}`
+            : '(intro)';
         return `  ${indent}[${s.id}] ${marker} — ${formatChars(s.charCount)}`;
     });
     return [head, ...lines].join('\n');

@@ -48,3 +48,30 @@ describe('extractContent', () => {
         expect(extractTitle(parseDocument(PAGE))).toBe('My Article');
     });
 });
+
+describe('extractContent heading anchors (mdBook-style)', () => {
+    // mdBook wraps heading text in <a class="header">; the "header" class is in
+    // the noise list, so the text must be recovered, not dropped.
+    const MDBOOK = `<!doctype html>
+<html><head><title>Goals</title></head>
+<body>
+  <main>
+    <h1 id="overview"><a class="header" href="#overview">Overview</a></h1>
+    <p>Establish the initial round of Rust Project Goals for 2026 along with roadmaps that describe multi-year arcs.</p>
+    <h2 id="how"><a class="header" href="#how">How do goals work?</a></h2>
+    <p>Goals serve multiple purposes for contributors, users, and maintainers across the whole project.</p>
+  </main>
+</body></html>`;
+
+    const md = extractContent(MDBOOK, 'https://rust-lang.github.io/');
+
+    it('recovers heading text wrapped in a noise-classed anchor', () => {
+        expect(md).toContain('# Overview');
+        expect(md).toContain('## How do goals work?');
+    });
+
+    it('never emits a bare heading marker', () => {
+        expect(md).not.toMatch(/^#+\s*$/m);
+        expect(md).not.toContain('# \n');
+    });
+});

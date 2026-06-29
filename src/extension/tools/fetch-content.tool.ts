@@ -161,11 +161,17 @@ async function renderResult(
     if (!result.ok) return `Fetch "${url}" failed: ${result.error.message}`;
     const doc = result.value;
 
+    const stored = docs[docIndex];
+
     if (params.summarize) {
-        const summary = await summarizeDocument(deps.summarize, doc, params, signal);
-        return responseId
-            ? `${summary}\n\n> Full page stored: get_content({ responseId: "${responseId}", index: ${docIndex} })`
-            : summary;
+        const summary = await trySummarize(deps.summarize, doc, params, signal);
+        if (summary !== undefined) {
+            return responseId
+                ? `${summary}\n\n> Full page stored: get_content({ responseId: "${responseId}", index: ${docIndex} })`
+                : summary;
+        }
+        // Summary failed: degrade to the normal compact rendering below (never
+        // dump the full page — that is what floods the context window).
     }
 
     if (doc.content.length <= deps.inlineMaxChars) {
@@ -173,8 +179,11 @@ async function renderResult(
     }
 
     // Large page: return a navigable outline instead of flooding the context.
-    const stored = docs[docIndex];
-    if (!stored) return formatDocument(doc);
+    if (!stored || !responseId) return formatDocument(doc);
+    return outlineBlock(stored, docIndex, responseId);
+}
+
+function outlineBlock(stored: StoredDoc, docIndex: number, responseId: string): string {
     return (
         `${renderDocOutline(stored, docIndex)}\n\n` +
         `> Large page (${stored.totalChars} chars) stored. ` +
@@ -193,12 +202,13 @@ function toStoredDoc(doc: FetchedDocument, maxSectionChars: number): StoredDoc {
     };
 }
 
-async function summarizeDocument(
+/** Returns the formatted summary, or undefined when summarization failed. */
+async function trySummarize(
     service: Summarizer,
     doc: FetchedDocument,
     params: FetchContentParams,
     signal: AbortSignal,
-): Promise<string> {
+): Promise<string | undefined> {
     const r = await service.summarize(
         doc.content,
         {
@@ -212,7 +222,7 @@ async function summarizeDocument(
     if (r.ok) {
         return `# Summary: ${doc.title || doc.url}\n<${doc.finalUrl}>\n\n${r.value.summary}`;
     }
-    return `${formatDocument(doc)}\n\n> Summary unavailable: ${r.error.message}`;
+    return undefined;
 }
 
 function formatDocument(doc: FetchedDocument): string {
