@@ -20,6 +20,11 @@ export interface AppConfig {
         readonly maxConcurrent: number;
         readonly proxy: string | undefined;
     };
+    readonly retry: {
+        readonly maxRetries: number;
+        readonly baseDelayMs: number;
+        readonly maxDelayMs: number;
+    };
     readonly cache: {
         readonly enabled: boolean;
         readonly ttlMs: number;
@@ -54,6 +59,11 @@ export const DEFAULT_CONFIG: AppConfig = {
         ttlMs: 5 * 60_000,
         maxEntries: 256,
     },
+    retry: {
+        maxRetries: 2,
+        baseDelayMs: 300,
+        maxDelayMs: 3_000,
+    },
     content: {
         inlineMaxChars: 6_000,
         maxSectionChars: 4_000,
@@ -74,6 +84,7 @@ export function resolveConfig(
     const merged: AppConfig = {
         search: { ...DEFAULT_CONFIG.search, ...fileConfig.search },
         fetch: { ...DEFAULT_CONFIG.fetch, ...fileConfig.fetch },
+        retry: { ...DEFAULT_CONFIG.retry, ...fileConfig.retry },
         cache: { ...DEFAULT_CONFIG.cache, ...fileConfig.cache },
         content: { ...DEFAULT_CONFIG.content, ...fileConfig.content },
     };

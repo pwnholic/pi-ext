@@ -6,7 +6,7 @@ import { registerExtension } from './extension/register.js';
 /**
  * Pi extension entry point. Pi loads this via jiti and invokes the default
  * export with its ExtensionAPI. We capture the active session context so the
- * host port (widget/notify) and the Pi-backed LLM client can reach the current
+ * host port (notify) and the Pi-backed LLM client can reach the current
  * model, then build the container and register the tools.
  */
 export default function piExt(pi: ExtensionAPI): void {

@@ -10,7 +10,7 @@ import type { ExtensionHost, ToolDefinition } from './ports.js';
  * on the host SDK's exact shape; core/modules stay SDK-free.
  *
  * Pi passes a fresh `ExtensionContext` per session and tool call. We capture the
- * latest one via `getCtx` so the host port (widgets, notifications) and the
+ * latest one via `getCtx` so the host port (notifications) and the LLM client
  * LLM client (active model) can reach it.
  */
 export type GetExtensionContext = () => ExtensionContext | undefined;
@@ -23,7 +23,7 @@ export function createHost(pi: ExtensionAPI, getCtx: GetExtensionContext): Exten
                 label: tool.label,
                 description: tool.description,
                 ...(tool.promptSnippet ? { promptSnippet: tool.promptSnippet } : {}),
-                ...(tool.promptGuidelines ? { promptGuidelines: tool.promptGuidelines } : {}),
+                ...(tool.promptGuidelines ? { promptGuidelines: [...tool.promptGuidelines] } : {}),
                 parameters: tool.parameters as never,
                 async execute(_toolCallId, params, signal) {
                     const result = await tool.execute(

@@ -14,11 +14,17 @@ context.
 ## Features
 
 - **Web search (`web_search`)** — Exa-backed, tuned for maximum quality on the
-  free/basic plan: `type: "auto"`, `useAutoprompt`, highlights, results capped
-  at the plan limit, budgeted text retrieval.
+  free/basic plan: `type: "auto"`, highlights, results capped at the plan
+  limit, budgeted text retrieval. Supports `category` (news, research paper,
+  company, etc.), `type` (auto/fast/deep/deep-reasoning), `includeText`/
+  `excludeText` filters, and domain include/exclude.
+- **Exa answer (`exa_answer`)** — Synthesized LLM answer to factual questions
+  via Exa's `/answer` endpoint, with citations to sources. More efficient than
+  search → fetch → summarize for Q&A.
 - **Content fetch (`fetch_content`)** — fetches via impers to defeat common bot
-  protection (browser TLS/HTTP fingerprint impersonation), then extracts clean
-  markdown with a readability-style pipeline (noise removal, content scoring,
+  protection (browser TLS/HTTP fingerprint impersonation), with Exa Contents
+  API as automatic fallback for JS-heavy pages and PDFs. Returns clean markdown
+  with a readability-style pipeline (noise removal, content scoring,
   DOM-to-markdown).
 - **Context-lean output** — large pages return a navigable section _outline_
   instead of raw content. Detail is pulled on demand via `get_content`, keeping
@@ -53,7 +59,6 @@ or `~/.pi` as `web-access.json`:
 
 ```json
 {
-    "logLevel": "info",
     "search": { "exaApiKey": "exa-...", "defaultNumResults": 5 },
     "fetch": { "impersonate": "chrome", "proxy": "http://localhost:3128" },
     "content": { "inlineMaxChars": 6000, "maxSectionChars": 4000, "fts": true }
@@ -67,7 +72,6 @@ Environment overrides (take precedence over the file):
 | `EXA_API_KEY`        | Exa search API key                                        |
 | `IMPERS_PROXY`       | HTTP/SOCKS proxy for fetches                              |
 | `IMPERS_IMPERSONATE` | impersonation target (e.g. `chrome`, `safari`, `firefox`) |
-| `PI_EXT_LOG_LEVEL`   | `debug` \| `info` \| `warn` \| `error`                    |
 
 Without an Exa key, `web_search` reports `provider_unavailable` by design;
 `fetch_content` works regardless.
@@ -115,37 +119,36 @@ get_content({ responseId: "abc123", query: "installation" }); // rank-search sec
 
 ## Architecture
 
-Ports-and-adapters with explicit decorator composition (no event bus). The
-request path returns a `Result<T, AppError>`; cross-cutting concerns are applied
-as ordered, type-safe wrappers in the composition root.
+Ports-and-adapters with a read-through cache decorator (no event bus, no
+telemetry layer). The request path returns a `Result<T, AppError>`; caching
+is applied as a type-safe wrapper in the composition root.
 
 ```
 src/
   core/
     container.ts        composition root (wires everything)
-    pipeline.ts         buildSearcher/Fetcher/Summarizer (cache + telemetry decorators)
-    instrument.ts       instrument() telemetry + readThrough() cache decorators
-    activity-monitor.ts live activity ledger (onUpdate for a widget)
+    pipeline.ts         buildSearcher/Fetcher/Answerer (read-through cache decorator)
     store.ts            CacheStore port + InMemoryStore (TTL + LRU)
     content-store.ts    ContentStore port + InMemoryContentStore + presenters
     sqlite-content-store.ts  SQLite/FTS5 ContentStore
     sections.ts         markdown -> addressable sections + keyword scoring
-    config.ts result.ts errors.ts logger.ts llm.ts
+    config.ts result.ts errors.ts llm.ts
   modules/
     search/   SearchService (Exa provider chain)
-    fetch/    FetchService (impers) + extract/ (noise -> score -> markdown)
+    answer/   AnswerService (Exa /answer endpoint)
+    fetch/    FetchService (impers + Exa Contents fallback) + extract/ (noise -> score -> markdown)
     summarize/ SummarizeService (map-reduce, Pi LLM)
   extension/
     ports.ts adapter.ts register.ts   Pi host boundary
-    tools/   web-search, fetch-content, get-content
+    tools/   web-search, fetch-content, get-content, exa-answer
   index.ts   activate(pi)
 ```
 
 Key decisions:
 
-- **Decorators over an event bus.** Caching and telemetry wrap services
-  explicitly (`buildSearcher(base, inst, cache)`), giving a linear, traceable,
-  type-safe flow. The read-through cache is correct (no write-only path).
+- **Cache decorator over an event bus.** A read-through cache wraps services
+  explicitly (`buildSearcher(base, cache)`), giving a linear, traceable,
+  type-safe flow with no write-only path.
 - **Structure-aware content windowing.** The extractor's markdown is split into
   heading sections; the agent sees the whole outline and pulls only what it
   needs, rather than a head-truncated blob.

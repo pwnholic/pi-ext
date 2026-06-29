@@ -11,6 +11,7 @@ describe('resolveConfig', () => {
         expect(config.search.defaultNumResults).toBe(8);
         expect(config.search.timeoutMs).toBe(DEFAULT_CONFIG.search.timeoutMs); // untouched
         expect(config.fetch).toEqual(DEFAULT_CONFIG.fetch);
+        expect(config.retry).toEqual(DEFAULT_CONFIG.retry); // untouched
     });
 
     it('applies env overrides above file config', () => {
@@ -18,7 +19,6 @@ describe('resolveConfig', () => {
             {
                 EXA_API_KEY: 'exa-from-env',
                 IMPERS_PROXY: 'http://localhost:3128',
-                PI_EXT_LOG_LEVEL: 'debug',
             },
             { search: { exaApiKey: 'from-file' } as never },
         );

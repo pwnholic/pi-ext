@@ -1,62 +1,64 @@
 import type { Fetcher } from '../modules/fetch/fetch.service.js';
 import type { FetchRequest } from '../modules/fetch/fetch.types.js';
+import type { Answerer } from '../modules/answer/answer.service.js';
+import type { AnswerQuery } from '../modules/answer/answer.types.js';
 import type { Searcher } from '../modules/search/search.service.js';
 import type { SearchQuery } from '../modules/search/search.types.js';
-import type { Summarizer } from '../modules/summarize/summarize.service.js';
-import { type Instrumentation, instrument, readThrough } from './instrument.js';
+import { ok, type Result } from './result.js';
 import type { CacheStore } from './store.js';
 
 /**
- * Composition pipeline: wraps base services with cross-cutting decorators
- * (read-through cache, then telemetry) in explicit, ordered layers. Replaces
- * the event bus + subscribers with traceable function composition.
+ * Composition pipeline: wraps base services with a read-through cache
+ * decorator. Replaces the former event bus + telemetry layer with a single,
+ * traceable function composition.
  */
 
-export function buildSearcher(base: Searcher, inst: Instrumentation, cache?: CacheStore): Searcher {
+/** Read-through cache: serve a fresh hit, otherwise run `op` and store on success. */
+async function readThrough<T>(
+    store: CacheStore | undefined,
+    key: string,
+    op: () => Promise<Result<T>>,
+): Promise<Result<T>> {
+    if (store) {
+        const hit = store.get<T>(key);
+        if (hit !== undefined) return ok(hit);
+    }
+    const result = await op();
+    if (store && result.ok) store.set(key, result.value);
+    return result;
+}
+
+export function buildSearcher(base: Searcher, cache?: CacheStore): Searcher {
     return {
         search: (query, signal) =>
-            instrument(
-                inst,
-                'search',
-                query.text,
-                (r) => `${r.hits.length} hits via ${r.provider}`,
-                () => readThrough(cache, searchKey(query), () => base.search(query, signal)),
-            ),
+            readThrough(cache, searchKey(query), () => base.search(query, signal)),
     };
 }
 
-export function buildFetcher(base: Fetcher, inst: Instrumentation, cache?: CacheStore): Fetcher {
+export function buildFetcher(base: Fetcher, cache?: CacheStore): Fetcher {
     return {
         fetch: (request, signal) =>
-            instrument(
-                inst,
-                'fetch',
-                request.url,
-                (d) => `${d.status} ${d.kind}`,
-                () => readThrough(cache, fetchKey(request), () => base.fetch(request, signal)),
-            ),
+            readThrough(cache, fetchKey(request), () => base.fetch(request, signal)),
     };
 }
 
-export function buildSummarizer(base: Summarizer, inst: Instrumentation): Summarizer {
+export function buildAnswerer(base: Answerer, cache?: CacheStore): Answerer {
     return {
-        isAvailable: () => base.isAvailable(),
-        summarize: (content, options, signal) =>
-            instrument(
-                inst,
-                'summarize',
-                `${content.length} chars`,
-                (s) => `${s.passes} pass(es)`,
-                () => base.summarize(content, options, signal),
-            ),
+        answer: (query, signal) =>
+            readThrough(cache, answerKey(query), () => base.answer(query, signal)),
     };
 }
 
 function searchKey(q: SearchQuery): string {
-    const domains = (q.domains ?? []).join(',');
-    return `search:${q.numResults ?? 'd'}:${q.recency ?? ''}:${domains}:${q.text.trim().toLowerCase()}`;
+    const domains = (q.domains ?? []).slice().sort().join(',');
+    const text = q.text.trim().toLowerCase().replace(/\s+/g, ' ');
+    return `search:${q.type ?? 'auto'}:${q.numResults ?? 'd'}:${q.recency ?? ''}:${q.category ?? ''}:${domains}:${q.includeText ?? ''}:${q.excludeText ?? ''}:${text}`;
 }
 
 function fetchKey(r: FetchRequest): string {
     return `fetch:${r.impersonate ?? 'd'}:${r.url}`;
+}
+
+function answerKey(q: AnswerQuery): string {
+    return `answer:${q.query.trim().toLowerCase().replace(/\s+/g, ' ')}`;
 }

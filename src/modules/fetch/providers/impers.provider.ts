@@ -80,14 +80,23 @@ export class ImpersFetchProvider implements FetchProvider {
 
             const contentType = response.headers.get('content-type') ?? '';
             const kind = classify(contentType);
-            const body = response.text;
 
+            if (kind === 'pdf' || kind === 'binary') {
+                return err(
+                    appError('invalid_input', `Unsupported content type (${contentType || kind}) for ${request.url}`, {
+                        source: this.name,
+                        retryable: true,
+                    }),
+                );
+            }
+
+            const body = response.text;
             let content = body;
             let title = request.url;
             if (kind === 'html') {
                 const doc = parseDocument(body);
                 title = extractTitle(doc) || request.url;
-                content = extractContent(body, response.url).markdown;
+                content = extractContent(body, response.url);
             }
 
             return ok({

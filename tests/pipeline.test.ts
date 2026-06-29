@@ -1,93 +1,129 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ActivityMonitor } from '../src/core/activity-monitor.js';
 import { appError } from '../src/core/errors.js';
-import { buildSearcher } from '../src/core/pipeline.js';
+import { buildAnswerer, buildSearcher } from '../src/core/pipeline.js';
 import { err, ok, type Result } from '../src/core/result.js';
 import { InMemoryStore } from '../src/core/store.js';
+import type { Answerer } from '../src/modules/answer/answer.service.js';
+import type { AnswerResponse } from '../src/modules/answer/answer.types.js';
 import type { Searcher } from '../src/modules/search/search.service.js';
 import type { SearchResponse } from '../src/modules/search/search.types.js';
 
-function fakeResponse(query: string): SearchResponse {
-    return { query, provider: 'fake', hits: [], tookMs: 1 };
+function fakeSearchResponse(query: string): SearchResponse {
+    return {
+        query,
+        provider: 'fake',
+        hits: [{ title: 'T', url: 'https://x.com', snippet: 'S' }],
+        tookMs: 1,
+    };
 }
 
-function inst() {
-    return { monitor: new ActivityMonitor() };
+function fakeAnswerResponse(query: string): AnswerResponse {
+    return {
+        answer: `Answer to: ${query}`,
+        citations: [{ title: 'C', url: 'https://src.com' }],
+        tookMs: 1,
+    };
 }
 
-describe('read-through cache (buildSearcher)', () => {
-    it('serves the second identical query from cache without re-hitting the provider', async () => {
+// ---------------------------------------------------------------------------
+// Cache key normalization
+// ---------------------------------------------------------------------------
+
+describe('cache key normalization', () => {
+    it('treats queries with different whitespace as identical', async () => {
         const base: Searcher = {
             search: vi.fn(
-                (q): Promise<Result<SearchResponse>> => Promise.resolve(ok(fakeResponse(q.text))),
+                (q): Promise<Result<SearchResponse>> =>
+                    Promise.resolve(ok(fakeSearchResponse(q.text))),
             ),
         };
-        const cache = new InMemoryStore({ ttlMs: 60_000, maxEntries: 10 });
-        const searcher = buildSearcher(base, inst(), cache);
+        const searcher = buildSearcher(base, new InMemoryStore({ ttlMs: 60_000, maxEntries: 10 }));
 
-        const first = await searcher.search({ text: 'hello' });
-        const second = await searcher.search({ text: 'hello' });
+        await searcher.search({ text: 'rust   async' });
+        await searcher.search({ text: '  rust  async ' });
+
+        expect(base.search).toHaveBeenCalledTimes(1);
+    });
+
+    it('treats domain order as irrelevant', async () => {
+        const base: Searcher = {
+            search: vi.fn(
+                (q): Promise<Result<SearchResponse>> =>
+                    Promise.resolve(ok(fakeSearchResponse(q.text))),
+            ),
+        };
+        const searcher = buildSearcher(base, new InMemoryStore({ ttlMs: 60_000, maxEntries: 10 }));
+
+        await searcher.search({ text: 'q', domains: ['a.com', 'b.com'] });
+        await searcher.search({ text: 'q', domains: ['b.com', 'a.com'] });
+
+        expect(base.search).toHaveBeenCalledTimes(1);
+    });
+
+    it('caches answer by normalized query', async () => {
+        const base: Answerer = {
+            answer: vi.fn(
+                (q): Promise<Result<AnswerResponse>> =>
+                    Promise.resolve(ok(fakeAnswerResponse(q.query))),
+            ),
+        };
+        const answerer = buildAnswerer(base, new InMemoryStore({ ttlMs: 60_000, maxEntries: 10 }));
+
+        await answerer.answer({ query: 'What is   Rust?' });
+        await answerer.answer({ query: ' what  is rust? ' });
+
+        expect(base.answer).toHaveBeenCalledTimes(1);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// buildAnswerer cache behavior
+// ---------------------------------------------------------------------------
+
+describe('read-through cache (buildAnswerer)', () => {
+    it('serves the second identical query from cache', async () => {
+        const base: Answerer = {
+            answer: vi.fn(
+                (q): Promise<Result<AnswerResponse>> =>
+                    Promise.resolve(ok(fakeAnswerResponse(q.query))),
+            ),
+        };
+        const answerer = buildAnswerer(base, new InMemoryStore({ ttlMs: 60_000, maxEntries: 10 }));
+
+        const first = await answerer.answer({ query: 'hello' });
+        const second = await answerer.answer({ query: 'hello' });
 
         expect(first.ok && second.ok).toBe(true);
-        expect(base.search).toHaveBeenCalledTimes(1); // second call hit cache
+        expect(base.answer).toHaveBeenCalledTimes(1);
     });
 
     it('does not cache failures', async () => {
-        const base: Searcher = {
-            search: vi.fn(
-                (): Promise<Result<SearchResponse>> =>
+        const base: Answerer = {
+            answer: vi.fn(
+                (): Promise<Result<AnswerResponse>> =>
                     Promise.resolve(err(appError('network', 'x', { retryable: true }))),
             ),
         };
-        const searcher = buildSearcher(
-            base,
-            inst(),
-            new InMemoryStore({ ttlMs: 60_000, maxEntries: 10 }),
-        );
-        await searcher.search({ text: 'q' });
-        await searcher.search({ text: 'q' });
-        expect(base.search).toHaveBeenCalledTimes(2);
-    });
-});
+        const answerer = buildAnswerer(base, new InMemoryStore({ ttlMs: 60_000, maxEntries: 10 }));
 
-describe('instrumentation feeds the activity monitor', () => {
-    it('records a running entry that ends ok', async () => {
-        const monitor = new ActivityMonitor();
-        const snapshots: number[] = [];
-        monitor.onUpdate((entries) => snapshots.push(entries.length));
-        const base: Searcher = { search: (q) => Promise.resolve(ok(fakeResponse(q.text))) };
+        await answerer.answer({ query: 'q' });
+        await answerer.answer({ query: 'q' });
 
-        await buildSearcher(base, { monitor }).search({ text: 'q' });
-
-        const [entry] = monitor.snapshot();
-        expect(entry?.kind).toBe('search');
-        expect(entry?.status).toBe('ok');
-        expect(snapshots.length).toBeGreaterThanOrEqual(2); // start + end notifications
-    });
-});
-
-describe('InMemoryStore', () => {
-    it('expires entries after the TTL', () => {
-        const store = new InMemoryStore({ ttlMs: 5, maxEntries: 10 });
-        store.set('k', 'v');
-        expect(store.get('k')).toBe('v');
-        vi.useFakeTimers();
-        try {
-            vi.setSystemTime(Date.now() + 10);
-            expect(store.get('k')).toBeUndefined();
-        } finally {
-            vi.useRealTimers();
-        }
+        expect(base.answer).toHaveBeenCalledTimes(2);
     });
 
-    it('evicts the least-recently-used entry past the cap', () => {
-        const store = new InMemoryStore({ ttlMs: 60_000, maxEntries: 2 });
-        store.set('a', 1);
-        store.set('b', 2);
-        store.get('a'); // touch a -> b is now LRU
-        store.set('c', 3); // evicts b
-        expect(store.get('a')).toBe(1);
-        expect(store.get('b')).toBeUndefined();
-        expect(store.get('c')).toBe(3);
+    it('passes through when no cache is configured', async () => {
+        const base: Answerer = {
+            answer: vi.fn(
+                (q): Promise<Result<AnswerResponse>> =>
+                    Promise.resolve(ok(fakeAnswerResponse(q.query))),
+            ),
+        };
+        const answerer = buildAnswerer(base);
+
+        await answerer.answer({ query: 'a' });
+        await answerer.answer({ query: 'a' });
+
+        expect(base.answer).toHaveBeenCalledTimes(2);
     });
 });

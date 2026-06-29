@@ -21,39 +21,27 @@ const PAGE = `<!doctype html>
 </html>`;
 
 describe('extractContent', () => {
-    const result = extractContent(PAGE, 'https://example.com/blog/');
+    const md = extractContent(PAGE, 'https://example.com/blog/');
 
     it('selects the article and drops nav/sidebar/footer/cookie noise', () => {
-        expect(result.markdown).toContain('# Hello World');
-        expect(result.markdown).toContain('main');
-        expect(result.markdown).not.toContain('Home');
-        expect(result.markdown).not.toContain('Buy now');
-        expect(result.markdown).not.toContain('We use cookies');
-        expect(result.markdown).not.toContain('Copyright');
+        expect(md).toContain('# Hello World');
+        expect(md).toContain('main');
+        expect(md).not.toContain('Home');
+        expect(md).not.toContain('Buy now');
+        expect(md).not.toContain('We use cookies');
+        expect(md).not.toContain('Copyright');
     });
 
     it('converts structure: headings, bold, lists, fenced code', () => {
-        expect(result.markdown).toContain('**main**');
-        expect(result.markdown).toContain('- One');
-        expect(result.markdown).toContain('\n  - Nested');
-        expect(result.markdown).toContain('```ts\nconst x: number = 1;\n```');
+        expect(md).toContain('**main**');
+        expect(md).toContain('- One');
+        expect(md).toContain('\n  - Nested');
+        expect(md).toContain('```ts\nconst x: number = 1;\n```');
     });
 
-    it('resolves relative URLs against the base and harvests assets', () => {
-        expect(result.markdown).toContain('[link](https://example.com/docs)');
-        expect(result.markdown).toContain('![a picture](https://example.com/img/pic.png)');
-        expect(result.assets.links.map((l) => l.href)).toContain('https://example.com/docs');
-        expect(result.assets.images[0]?.src).toBe('https://example.com/img/pic.png');
-        expect(result.assets.codeBlocks[0]).toEqual({
-            language: 'ts',
-            code: 'const x: number = 1;',
-        });
-    });
-
-    it('derives a clean plain-text view without markdown syntax', () => {
-        expect(result.plainText).toContain('Hello World');
-        expect(result.plainText).not.toContain('# Hello World');
-        expect(result.plainText).not.toContain('](');
+    it('resolves relative URLs against the base', () => {
+        expect(md).toContain('[link](https://example.com/docs)');
+        expect(md).toContain('![a picture](https://example.com/img/pic.png)');
     });
 
     it('extracts and normalizes the title', () => {

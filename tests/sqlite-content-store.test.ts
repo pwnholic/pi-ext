@@ -49,7 +49,7 @@ describe('SqliteContentStore', () => {
         const id = store.put([storedDoc()]);
         const docs = store.get(id);
         expect(docs?.length).toBe(1);
-        const headings = docs![0]!.sections.filter((s) => s.level > 0).map((s) => s.heading);
+        const headings = docs?.[0]?.sections.filter((s) => s.level > 0).map((s) => s.heading) ?? [];
         expect(headings).toEqual(['Title', 'Installation', 'Usage', 'Troubleshooting']);
         expect(store.get('missing')).toBeUndefined();
     });

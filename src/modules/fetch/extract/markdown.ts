@@ -9,21 +9,15 @@
  */
 import { isElement, isText, tagName } from './dom.js';
 import { isNoise, isNoiseDescendant } from './noise.js';
-import { type ExtractedAssets, MAX_DOM_DEPTH } from './types.js';
+import { MAX_DOM_DEPTH } from './types.js';
 
 interface Ctx {
     readonly baseUrl: string | undefined;
-    readonly assets: ExtractedAssets;
-    readonly exclude: ReadonlySet<Element>;
 }
 
 export function nodeToMd(el: Element, ctx: Ctx, listDepth: number, depth: number): string {
-    if (ctx.exclude.has(el)) return '';
     if (depth > MAX_DOM_DEPTH) return el.textContent ?? '';
-    if (isNoise(el) || isNoiseDescendant(el)) {
-        collectAssetsFromNoise(el, ctx);
-        return '';
-    }
+    if (isNoise(el) || isNoiseDescendant(el)) return '';
 
     const tag = tagName(el);
     switch (tag) {
@@ -61,7 +55,7 @@ export function nodeToMd(el: Element, ctx: Ctx, listDepth: number, depth: number
             return text === '' ? '' : `\`${text}\``;
         }
         case 'pre':
-            return preToMd(el, ctx, depth);
+            return preToMd(el, depth);
         case 'blockquote': {
             const inner = childrenToMd(el, ctx, listDepth, depth).trim();
             const quoted = inner
@@ -123,10 +117,7 @@ function anchorToMd(el: Element, ctx: Ctx, depth: number): string {
     const text = inlineText(el, ctx, depth);
     const hrefAttr = el.getAttribute('href');
     const href = hrefAttr ? resolveUrl(hrefAttr, ctx.baseUrl) : '';
-    if (text !== '' && href !== '') {
-        ctx.assets.links.push({ text, href });
-        return `[${text}](${href})`;
-    }
+    if (text !== '' && href !== '') return `[${text}](${href})`;
     return text;
 }
 
@@ -148,14 +139,10 @@ function imageToMd(el: Element, ctx: Ctx): string {
         src = best ? resolveUrl(best, ctx.baseUrl) : '';
     }
 
-    if (src !== '') {
-        ctx.assets.images.push({ alt, src });
-        return `![${alt}](${src})`;
-    }
-    return '';
+    return src !== '' ? `![${alt}](${src})` : '';
 }
 
-function preToMd(el: Element, ctx: Ctx, depth: number): string {
+function preToMd(el: Element, depth: number): string {
     const codeEl = el.querySelector('code');
     let code: string;
     let lang: string | undefined;
@@ -169,7 +156,6 @@ function preToMd(el: Element, ctx: Ctx, depth: number): string {
         code = collectPreformattedText(el, depth);
     }
     code = code.replace(/^\n+/, '').replace(/\n+$/, '');
-    ctx.assets.codeBlocks.push({ language: lang, code });
     return `\n\n\`\`\`${lang ?? ''}\n${code}\n\`\`\`\n\n`;
 }
 
@@ -185,7 +171,6 @@ function listItems(
     let index = 1;
 
     for (const child of listEl.children) {
-        if (ctx.exclude.has(child)) continue;
         if (tagName(child) !== 'li') continue;
 
         const bullet = ordered ? `${index++}.` : '-';
@@ -194,7 +179,6 @@ function listItems(
 
         for (const liChild of child.childNodes) {
             if (isElement(liChild)) {
-                if (ctx.exclude.has(liChild)) continue;
                 const childTag = tagName(liChild);
                 if (childTag === 'ul' || childTag === 'ol') {
                     nestedLists += listItems(
@@ -255,10 +239,8 @@ function tableToMd(table: Element, ctx: Ctx, depth: number): string {
     let isLayout = false;
 
     for (const tr of table.querySelectorAll('tr')) {
-        if (ctx.exclude.has(tr)) continue;
         const cells: Element[] = [];
         for (const cell of tr.children) {
-            if (ctx.exclude.has(cell)) continue;
             const t = tagName(cell);
             if (t !== 'th' && t !== 'td') continue;
             if (t === 'th') hasHeader = true;
@@ -326,24 +308,6 @@ function isInsidePre(el: Element): boolean {
         node = node.parentElement;
     }
     return false;
-}
-
-/** Harvest links/images from noise subtrees as metadata, without emitting text. */
-function collectAssetsFromNoise(el: Element, ctx: Ctx): void {
-    for (const a of el.querySelectorAll('a')) {
-        const text = (a.textContent ?? '').trim();
-        const hrefAttr = a.getAttribute('href');
-        const href = hrefAttr ? resolveUrl(hrefAttr, ctx.baseUrl) : '';
-        if (text !== '' && href !== '') ctx.assets.links.push({ text, href });
-    }
-    for (const img of el.querySelectorAll('img')) {
-        const rawSrc = img.getAttribute('src') ?? img.getAttribute('data-src') ?? '';
-        if (rawSrc === '' || rawSrc.startsWith('data:') || rawSrc.startsWith('blob:')) continue;
-        ctx.assets.images.push({
-            alt: img.getAttribute('alt') ?? '',
-            src: resolveUrl(rawSrc, ctx.baseUrl),
-        });
-    }
 }
 
 // --- separator heuristics ---------------------------------------------------

@@ -2,6 +2,7 @@ import { Exa } from 'exa-js';
 import type { AppConfig } from '../../../core/config.js';
 import { appError, toError } from '../../../core/errors.js';
 import { err, fromPromise, type Result } from '../../../core/result.js';
+import { isTimeoutError, raceAbort, withTimeout } from '../../../core/timeout.js';
 import type { SearchHit, SearchQuery, SearchResponse } from '../search.types.js';
 import type { SearchProvider } from './provider.js';
 
@@ -12,7 +13,13 @@ interface ExaResultLike {
     text?: string | null;
     highlights?: string[] | null;
     publishedDate?: string | null;
+    author?: string | null;
     score?: number | null;
+}
+
+/** Top-level Exa search response shape. */
+interface ExaSearchResponseLike {
+    results: ExaResultLike[];
 }
 
 const SNIPPET_MAX = 500;
@@ -23,7 +30,11 @@ const TEXT_BUDGET_CHARS = 1200;
 
 /**
  * Exa-backed search provider. Uses `searchAndContents` to retrieve hits with
- * text snippets in a single call.
+ * text snippets and highlights in a single call.
+ *
+ * Max-quality settings: `type: "auto"` (Exa picks neural vs keyword), `highlights:
+ * true` (highest-quality default extracts), `text` budgeted to bound content cost,
+ * `numResults` capped at the plan max.
  */
 export class ExaSearchProvider implements SearchProvider {
     readonly name = 'exa';
@@ -54,29 +65,35 @@ export class ExaSearchProvider implements SearchProvider {
         const requested = query.numResults ?? this.config.search.defaultNumResults;
         const numResults = Math.min(Math.max(requested, 1), MAX_BASIC_RESULTS);
 
+        const timeoutMs = query.type?.startsWith('deep')
+            ? this.config.search.timeoutMs * 3
+            : this.config.search.timeoutMs;
+
         return fromPromise(
             (async (): Promise<SearchResponse> => {
-                // Maximum-quality settings within the free/basic plan:
-                // - type 'auto' lets Exa pick neural vs keyword (deep* variants cost more)
-                // - useAutoprompt improves query understanding for neural retrieval
-                // - highlights surface the most relevant extracts (best snippet quality)
-                // - text budgeted to bound content cost; numResults capped at the plan max
-                const response = await this.exa().searchAndContents(query.text, {
-                    type: 'auto',
-                    useAutoprompt: true,
+                const signal = withTimeout(undefined, timeoutMs);
+                const response = await raceAbort(
+                    this.exaClient().searchAndContents(query.text, {
+                    type: query.type ?? 'auto',
                     numResults,
                     text: { maxCharacters: TEXT_BUDGET_CHARS },
                     highlights: true,
                     ...(include.length > 0 ? { includeDomains: include } : {}),
                     ...(exclude.length > 0 ? { excludeDomains: exclude } : {}),
                     ...(startPublishedDate ? { startPublishedDate } : {}),
-                });
+                    ...(query.category ? { category: query.category } : {}),
+                    ...(query.includeText ? { includeText: [query.includeText] } : {}),
+                    ...(query.excludeText ? { excludeText: [query.excludeText] } : {}),
+                }) as unknown as Promise<ExaSearchResponseLike>,
+                    signal,
+                ) as unknown as ExaSearchResponseLike;
                 const results = response.results as unknown as ExaResultLike[];
                 const hits: SearchHit[] = results.map((r) => ({
                     title: r.title ?? '',
                     url: r.url,
                     snippet: bestSnippet(r),
                     ...(r.publishedDate ? { publishedAt: r.publishedDate } : {}),
+                    ...(r.author ? { author: r.author } : {}),
                     ...(typeof r.score === 'number' ? { score: r.score } : {}),
                 }));
                 return {
@@ -86,11 +103,20 @@ export class ExaSearchProvider implements SearchProvider {
                     tookMs: Date.now() - startedAt,
                 };
             })(),
-            (cause) => toError(cause, this.name),
+            (cause) => {
+                if (isTimeoutError(cause)) {
+                    return appError('timeout', `Exa search timed out after ${timeoutMs}ms`, {
+                        source: this.name,
+                        retryable: true,
+                    });
+                }
+                return toError(cause, this.name);
+            },
         );
     }
 
-    private exa(): Exa {
+    /** Expose the raw Exa client for reuse by the answer/contents providers. */
+    exaClient(): Exa {
         if (!this.client) {
             const apiKey = this.config.search.exaApiKey;
             // Guarded by isAvailable() before any call path reaches here.
