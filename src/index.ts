@@ -21,11 +21,6 @@ export default function piExt(pi: ExtensionAPI): void {
     registerExtension(host, container);
 
     pi.on('session_shutdown', () => void container.dispose());
-
-    container.logger.info('pi-ext activated', {
-        tools: ['web_search', 'fetch_content', 'get_content'],
-        summarization: container.summarize.isAvailable(),
-    });
 }
 
 export type { Container } from './core/container.js';

@@ -24,12 +24,10 @@ describe('resolveConfig', () => {
         );
         expect(config.search.exaApiKey).toBe('exa-from-env');
         expect(config.fetch.proxy).toBe('http://localhost:3128');
-        expect(config.logLevel).toBe('debug');
     });
 
-    it('ignores blank env values and invalid log levels', () => {
-        const config = resolveConfig({ EXA_API_KEY: '  ', PI_EXT_LOG_LEVEL: 'verbose' }, {});
+    it('ignores blank env values', () => {
+        const config = resolveConfig({ EXA_API_KEY: '  ' }, {});
         expect(config.search.exaApiKey).toBeUndefined();
-        expect(config.logLevel).toBe(DEFAULT_CONFIG.logLevel);
     });
 });

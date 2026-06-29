@@ -1,6 +1,5 @@
 import { appError } from '../../core/errors.js';
 import type { LlmClient, Message } from '../../core/llm.js';
-import type { Logger } from '../../core/logger.js';
 import { err, ok, type Result } from '../../core/result.js';
 import { type ChunkConfig, chunkText, DEFAULT_CHUNK } from './chunk.js';
 import { stripThinkingTags } from './clean.js';
@@ -18,7 +17,6 @@ export interface Summarizer {
 }
 
 export interface SummarizeServiceDeps {
-    readonly logger: Logger;
     /** Optional: when absent, summarization reports provider_unavailable. */
     readonly llm: LlmClient | undefined;
     readonly chunkConfig?: ChunkConfig;
@@ -35,12 +33,10 @@ const MAX_REDUCE_PASSES = 3;
  * (reduce), recursing until the combined partials fit a single call.
  */
 export class SummarizeService implements Summarizer {
-    private readonly logger: Logger;
     private readonly llm: LlmClient | undefined;
     private readonly chunkConfig: ChunkConfig;
 
     constructor(deps: SummarizeServiceDeps) {
-        this.logger = deps.logger.child({ module: 'summarize' });
         this.llm = deps.llm;
         this.chunkConfig = deps.chunkConfig ?? DEFAULT_CHUNK;
     }
@@ -86,7 +82,6 @@ export class SummarizeService implements Summarizer {
             if (!r.ok) return r;
             summaryText = r.value;
         } else {
-            this.logger.info('map-reduce summarization', { chunks: chunks.length });
             const mapped = await this.mapChunks(chunks, model, signal);
             if (!mapped.ok) return mapped;
             passes = 2;

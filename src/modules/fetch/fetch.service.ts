@@ -1,5 +1,4 @@
 import { appError } from '../../core/errors.js';
-import type { Logger } from '../../core/logger.js';
 import { err, ok, type Result } from '../../core/result.js';
 import type { FetchedDocument, FetchRequest } from './fetch.types.js';
 import type { FetchProvider } from './providers/provider.js';
@@ -10,7 +9,6 @@ export interface Fetcher {
 }
 
 export interface FetchServiceDeps {
-    readonly logger: Logger;
     readonly providers: readonly FetchProvider[];
 }
 
@@ -21,11 +19,9 @@ export interface FetchServiceDeps {
  * caching/telemetry are applied by decorators in the composition layer.
  */
 export class FetchService implements Fetcher {
-    private readonly logger: Logger;
     private readonly providers: readonly FetchProvider[];
 
     constructor(deps: FetchServiceDeps) {
-        this.logger = deps.logger.child({ module: 'fetch' });
         this.providers = deps.providers;
     }
 
@@ -45,7 +41,6 @@ export class FetchService implements Fetcher {
             const result = await provider.fetch(request, signal);
             if (result.ok) return ok(result.value);
             failures.push(`${provider.name}: ${result.error.message}`);
-            this.logger.warn('provider failed, falling back', { provider: provider.name });
             if (result.error.kind === 'aborted') break;
             if (!result.error.retryable) break;
         }

@@ -28,13 +28,51 @@ export function createGetContentTool(content: ContentStore): ToolDefinition<GetC
     return {
         name: 'get_content',
         label: 'Get Content',
-        description:
-            'Retrieve stored page content captured by fetch_content, keeping the context window lean. ' +
-            'No `section`/`query`: returns an outline of the document sections. ' +
-            '`section`: returns that one section in full. ' +
-            '`query`: rank-searches sections and returns the most relevant ones. ' +
-            '`index` selects a document when multiple URLs were fetched.',
-        promptSnippet: 'Pull a stored page section or rank-search stored content by responseId',
+        description: [
+            'Retrieve stored page content captured by `fetch_content`, keeping the context window lean.',
+            'Three modes of operation:',
+            '',
+            '## Modes',
+            '1. OUTLINE (no `section`, no `query`): Returns a navigable list of all sections with IDs,',
+            '   headings, and char counts. ALWAYS start here to discover available section IDs.',
+            '2. SECTION (`section` set): Returns the full content of one section by ID.',
+            '   Use `offset`/`limit` for pagination on very long sections.',
+            '3. SEARCH (`query` set): Rank-searches sections via FTS5/BM25 (or term-frequency fallback).',
+            '   Returns top 5 matches with snippets. Use when you do not know which section is relevant.',
+            '',
+            '## Parameters',
+            '- `responseId` (string)   REQUIRED. The ID returned by `fetch_content` (10-char hex).',
+            '- `index` (number)       Document index when multiple URLs were fetched. Default 0.',
+            '- `section` (string)     Section ID from the outline (e.g. "3").',
+            '- `query` (string)       Rank-search keywords across all sections. Use concise keywords, not full sentences.',
+            '- `offset` (number)      Character offset for section pagination. Default 0.',
+            '- `limit` (number)       Max characters to return from the section (for pagination).',
+            '',
+            '## Best Practices',
+            '1. ALWAYS call without `section`/`query` first to get the outline and discover section IDs.',
+            '2. Then call with `section: "<id>"` to read the relevant section in full.',
+            '3. If you do not know which section is relevant, use `query` with concise keywords:',
+            '   Good: { responseId: "...", query: "oauth2 token refresh" }',
+            '   Bad:  { responseId: "...", query: "how does the authentication system handle OAuth2 token refresh" }',
+            '4. For multi-URL fetches, ALWAYS specify `index` (0 = first URL, 1 = second, etc.).',
+            '5. If responseId is expired ("No stored content"), re-fetch the page with `fetch_content`.',
+            '   Max 50 responses are retained per session (LRU eviction).',
+            '',
+            '## Anti-Patterns',
+            '- Calling with `section` before checking the outline (section ID may not exist).',
+            '- Using a long natural-language sentence as `query` (degrades rank-search quality).',
+            '- Forgetting `index` on multi-document responses (defaults to 0, may read wrong page).',
+        ].join('\n'),
+        promptSnippet:
+            'Retrieve stored page sections or rank-search stored content by responseId; ALWAYS get the outline first (no section/query), then pull specific sections or search with concise keywords; specify index for multi-URL fetches.',
+        promptGuidelines: [
+            'ALWAYS call `get_content` without `section` or `query` first to get the section outline and discover available section IDs.',
+            'Then call with `section: "<id>"` to read a specific section in full. Never guess section IDs without checking the outline first.',
+            'When searching, use concise keywords, not full natural-language sentences. Good: query: "oauth2 token refresh". Bad: query: "how does the authentication system handle OAuth2 token refresh".',
+            'For multi-URL fetches (when `urls` was used in `fetch_content`), ALWAYS specify `index` (0 = first URL, 1 = second, etc.) to target the correct document.',
+            'For very long sections, use `offset` and `limit` for pagination: { section: "7", offset: 0, limit: 2000 } retrieves the first 2,000 characters.',
+            'If the responseId is expired ("No stored content"), re-fetch the page with `fetch_content`. Max 50 responses retained per session (LRU eviction).',
+        ],
         parameters: Type.Object({
             responseId: Type.String(),
             index: Type.Optional(Type.Number()),

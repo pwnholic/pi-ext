@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import type { CompletionRequest, LlmClient } from '../src/core/llm.js';
-import { createLogger } from '../src/core/logger.js';
 import { ok, type Result } from '../src/core/result.js';
 import { chunkText } from '../src/modules/summarize/chunk.js';
 import { stripThinkingTags } from '../src/modules/summarize/clean.js';
@@ -16,7 +15,6 @@ function fakeLlm(handler: (req: CompletionRequest) => string): LlmClient {
 
 function makeService(llm: LlmClient | undefined): SummarizeService {
     return new SummarizeService({
-        logger: createLogger('error'),
         llm,
         chunkConfig: { maxChars: 100, overlapChars: 10 },
     });

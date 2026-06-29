@@ -1,37 +1,32 @@
 import type { ActivityKind, ActivityMonitor } from './activity-monitor.js';
-import type { Logger } from './logger.js';
 import { ok, type Result } from './result.js';
 import type { CacheStore } from './store.js';
 
 export interface Instrumentation {
     readonly monitor: ActivityMonitor;
-    readonly logger: Logger;
 }
 
 /**
  * Cross-cutting telemetry decorator: wraps a labeled async Result operation
- * with activity tracking and structured logging. Replaces the event-bus
- * subscribers with an explicit, ordered, type-safe call.
+ * with activity tracking. Replaces the event-bus subscribers with an
+ * explicit, ordered, type-safe call.
  */
 export async function instrument<T>(
     inst: Instrumentation,
     kind: ActivityKind,
     label: string,
-    describe: (value: T) => string,
+    describe: (_value: T) => string,
     op: () => Promise<Result<T>>,
 ): Promise<Result<T>> {
     const id = crypto.randomUUID();
     inst.monitor.start(id, kind, label);
-    inst.logger.info(`${kind}.start`, { id, label });
 
     const result = await op();
 
     if (result.ok) {
         inst.monitor.end(id);
-        inst.logger.info(`${kind}.ok`, { id, detail: describe(result.value) });
     } else {
         inst.monitor.end(id);
-        inst.logger.warn(`${kind}.failed`, { id, error: result.error.message });
     }
     return result;
 }

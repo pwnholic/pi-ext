@@ -23,6 +23,7 @@ export function createHost(pi: ExtensionAPI, getCtx: GetExtensionContext): Exten
                 label: tool.label,
                 description: tool.description,
                 ...(tool.promptSnippet ? { promptSnippet: tool.promptSnippet } : {}),
+                ...(tool.promptGuidelines ? { promptGuidelines: tool.promptGuidelines } : {}),
                 parameters: tool.parameters as never,
                 async execute(_toolCallId, params, signal) {
                     const result = await tool.execute(

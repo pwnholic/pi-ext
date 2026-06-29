@@ -19,6 +19,8 @@ export interface ToolDefinition<Params> {
     readonly label: string;
     readonly description: string;
     readonly promptSnippet?: string;
+    /** Optional guideline bullets appended to the default system prompt Guidelines section when this tool is active. */
+    readonly promptGuidelines?: readonly string[];
     readonly parameters: ToolParameters;
     execute(params: Params, signal: AbortSignal): Promise<ToolTextResult>;
 }

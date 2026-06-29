@@ -35,13 +35,47 @@ export function createFetchContentTool(deps: FetchContentDeps): ToolDefinition<F
     return {
         name: 'fetch_content',
         label: 'Fetch Content',
-        description:
-            'Fetch URL(s) using impers (curl-impersonate) and return readable content as markdown. ' +
-            'Bypasses common bot protection via browser TLS/HTTP fingerprint impersonation. ' +
-            'Large pages return a section outline (retrieve detail with get_content) to keep the context lean. ' +
-            'Set `summarize: true` to return a concise LLM summary instead.',
+        description: [
+            'Fetch URL(s) using impers (curl-impersonate) and return readable content as markdown.',
+            'Bypasses common bot protection via browser TLS/HTTP fingerprint impersonation.',
+            'Large pages (> 6,000 chars) are stored out-of-context and return a navigable',
+            'section outline — retrieve detail via `get_content` using the returned `responseId`.',
+            'Set `summarize: true` to return a concise LLM summary instead of full content.',
+            '',
+            '## Parameters',
+            '- `url` (string)             Single URL to fetch. Must be http/https.',
+            '- `urls` (string[])          Multiple URLs (max 3 concurrent — additional URLs queue).',
+            '- `impersonate` (string)     Browser fingerprint: "chrome" (default), "safari", "firefox".',
+            '- `summarize` (boolean)     When true, return an LLM summary instead of full content.',
+            '- `summaryStyle` (string)    "sentences" (default) or "bullets".',
+            '- `summarySentences` (number) Target length: sentence count for "sentences", bullet count for "bullets". Default 3.',
+            '',
+            '## Best Practices',
+            '1. Use `urls` array to fetch 1-3 URLs concurrently. Never exceed 3 — they will queue.',
+            '2. For data-dense pages, prefer summarize with bullets:',
+            '   { url: "...", summarize: true, summaryStyle: "bullets", summarySentences: 5 }',
+            '3. If a site returns 403/429 (blocked), retry with a different `impersonate` value:',
+            '   "chrome" → "safari" → "firefox"',
+            '4. ALWAYS save the `responseId` from the result details. It is the key for `get_content`.',
+            '5. For large pages, the tool returns a section outline (not full content).',
+            '   Use `get_content` with the responseId to navigate specific sections.',
+            '',
+            '## Anti-Patterns',
+            '- Fetching > 3 URLs at once (silently queues, slow).',
+            '- summarize: true with default "sentences" style on data-heavy pages (loses facts). Use "bullets" instead.',
+            '- Ignoring the `responseId` in the result (cannot retrieve stored content later).',
+        ].join('\n'),
         promptSnippet:
-            'Fetch URL(s) via impers with browser TLS impersonation; large pages return a section outline',
+            'Fetch URL(s) via impers with browser TLS impersonation; max 3 concurrent URLs; large pages return a section outline — save the responseId for get_content; use summarize + bullets for quick fact extraction; retry with different impersonate on 403/429.',
+        promptGuidelines: [
+            'Fetch at most 3 URLs concurrently via the `urls` array. Additional URLs silently queue and slow down execution.',
+            'ALWAYS save the `responseId` from the result details — it is the key for retrieving stored content via `get_content`.',
+            'For data-dense pages (API docs, specs, comparisons), prefer summarize with bullets: { summarize: true, summaryStyle: "bullets", summarySentences: 5 }.',
+            'For narrative content (articles, blog posts), use summarize with sentences: { summarize: true, summaryStyle: "sentences", summarySentences: 3 }.',
+            'If a site returns 403 or 429 (blocked), retry with a different `impersonate` value: "chrome" (default) → "safari" → "firefox".',
+            'Pages larger than 6,000 chars return a section outline, not full content. Use `get_content` with the responseId to navigate specific sections.',
+            'Avoid fetching more than 3 URLs at once — they will queue silently and increase latency.',
+        ],
         parameters: Type.Object({
             url: Type.Optional(Type.String()),
             urls: Type.Optional(Type.Array(Type.String())),

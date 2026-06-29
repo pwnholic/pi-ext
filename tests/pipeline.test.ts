@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ActivityMonitor } from '../src/core/activity-monitor.js';
 import { appError } from '../src/core/errors.js';
-import { createLogger } from '../src/core/logger.js';
 import { buildSearcher } from '../src/core/pipeline.js';
 import { err, ok, type Result } from '../src/core/result.js';
 import { InMemoryStore } from '../src/core/store.js';
@@ -13,7 +12,7 @@ function fakeResponse(query: string): SearchResponse {
 }
 
 function inst() {
-    return { monitor: new ActivityMonitor(), logger: createLogger('error') };
+    return { monitor: new ActivityMonitor() };
 }
 
 describe('read-through cache (buildSearcher)', () => {
@@ -58,7 +57,7 @@ describe('instrumentation feeds the activity monitor', () => {
         monitor.onUpdate((entries) => snapshots.push(entries.length));
         const base: Searcher = { search: (q) => Promise.resolve(ok(fakeResponse(q.text))) };
 
-        await buildSearcher(base, { monitor, logger: createLogger('error') }).search({ text: 'q' });
+        await buildSearcher(base, { monitor }).search({ text: 'q' });
 
         const [entry] = monitor.snapshot();
         expect(entry?.kind).toBe('search');

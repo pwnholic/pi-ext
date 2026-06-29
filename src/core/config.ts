@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import type { LogLevel } from './logger.js';
 
 /**
  * Resolved, validated configuration. Loaded once at composition time.
@@ -9,7 +8,6 @@ import type { LogLevel } from './logger.js';
  * overrides built-in defaults.
  */
 export interface AppConfig {
-    readonly logLevel: LogLevel;
     readonly search: {
         readonly exaApiKey: string | undefined;
         readonly defaultNumResults: number;
@@ -40,7 +38,6 @@ export interface AppConfig {
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
-    logLevel: 'info',
     search: {
         exaApiKey: undefined,
         defaultNumResults: 5,
@@ -75,7 +72,6 @@ export function resolveConfig(
     fileConfig: Partial<AppConfig> = {},
 ): AppConfig {
     const merged: AppConfig = {
-        logLevel: fileConfig.logLevel ?? DEFAULT_CONFIG.logLevel,
         search: { ...DEFAULT_CONFIG.search, ...fileConfig.search },
         fetch: { ...DEFAULT_CONFIG.fetch, ...fileConfig.fetch },
         cache: { ...DEFAULT_CONFIG.cache, ...fileConfig.cache },
@@ -88,10 +84,8 @@ function applyEnv(config: AppConfig, env: NodeJS.ProcessEnv): AppConfig {
     const exaApiKey = env.EXA_API_KEY?.trim();
     const proxy = env.IMPERS_PROXY?.trim();
     const impersonate = env.IMPERS_IMPERSONATE?.trim();
-    const logLevel = parseLogLevel(env.PI_EXT_LOG_LEVEL);
     return {
         ...config,
-        ...(logLevel ? { logLevel } : {}),
         search: { ...config.search, ...(exaApiKey ? { exaApiKey } : {}) },
         fetch: {
             ...config.fetch,
@@ -99,11 +93,6 @@ function applyEnv(config: AppConfig, env: NodeJS.ProcessEnv): AppConfig {
             ...(impersonate ? { impersonate } : {}),
         },
     };
-}
-
-function parseLogLevel(value: string | undefined): LogLevel | undefined {
-    const v = value?.trim().toLowerCase();
-    return v === 'debug' || v === 'info' || v === 'warn' || v === 'error' ? v : undefined;
 }
 
 /**
