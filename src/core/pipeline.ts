@@ -1,7 +1,7 @@
-import type { Fetcher } from '../modules/fetch/fetch.service.js';
-import type { FetchRequest } from '../modules/fetch/fetch.types.js';
 import type { Answerer } from '../modules/answer/answer.service.js';
 import type { AnswerQuery } from '../modules/answer/answer.types.js';
+import type { Fetcher } from '../modules/fetch/fetch.service.js';
+import type { FetchRequest } from '../modules/fetch/fetch.types.js';
 import type { Searcher } from '../modules/search/search.service.js';
 import type { SearchQuery } from '../modules/search/search.types.js';
 import { ok, type Result } from './result.js';

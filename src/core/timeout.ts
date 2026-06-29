@@ -13,9 +13,13 @@ export function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<
         return Promise.reject(signal.reason ?? new Error('Aborted'));
     }
     return new Promise<T>((resolve, reject) => {
-        signal.addEventListener('abort', () => {
-            reject(signal.reason ?? new Error('Aborted'));
-        }, { once: true });
+        signal.addEventListener(
+            'abort',
+            () => {
+                reject(signal.reason ?? new Error('Aborted'));
+            },
+            { once: true },
+        );
         promise.then(resolve, reject);
     });
 }

@@ -1,10 +1,4 @@
-export type SearchType =
-    | 'auto'
-    | 'fast'
-    | 'instant'
-    | 'deep-lite'
-    | 'deep'
-    | 'deep-reasoning';
+export type SearchType = 'auto' | 'fast' | 'instant' | 'deep-lite' | 'deep' | 'deep-reasoning';
 
 export type SearchCategory =
     | 'company'

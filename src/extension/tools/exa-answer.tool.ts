@@ -51,9 +51,7 @@ export function createExaAnswerTool(service: Answerer): ToolDefinition<ExaAnswer
 
             if (!result.ok) {
                 return {
-                    content: [
-                        { type: 'text', text: `Answer failed: ${result.error.message}` },
-                    ],
+                    content: [{ type: 'text', text: `Answer failed: ${result.error.message}` }],
                 };
             }
 

@@ -12,6 +12,7 @@ interface ExaResultLike {
     title?: string | null;
     text?: string | null;
     highlights?: string[] | null;
+    summary?: string | null;
     publishedDate?: string | null;
     author?: string | null;
     score?: number | null;
@@ -22,7 +23,7 @@ interface ExaSearchResponseLike {
     results: ExaResultLike[];
 }
 
-const SNIPPET_MAX = 500;
+const SNIPPET_MAX = 240;
 /** Basic/free plans cap results at 10 (Exa SDK spec). */
 const MAX_BASIC_RESULTS = 10;
 /** Bound per-result text retrieval to keep free-tier content cost in check. */
@@ -32,9 +33,10 @@ const TEXT_BUDGET_CHARS = 1200;
  * Exa-backed search provider. Uses `searchAndContents` to retrieve hits with
  * text snippets and highlights in a single call.
  *
- * Max-quality settings: `type: "auto"` (Exa picks neural vs keyword), `highlights:
- * true` (highest-quality default extracts), `text` budgeted to bound content cost,
- * `numResults` capped at the plan max.
+ * Max-quality settings: `type: "auto"` (Exa picks neural vs keyword), `summary:
+ * true` (clean LLM-generated abstract, preferred for the snippet), `highlights:
+ * true` (extractive fallback), `text` budgeted to bound cost, `numResults`
+ * capped at the plan max.
  */
 export class ExaSearchProvider implements SearchProvider {
     readonly name = 'exa';
@@ -72,21 +74,22 @@ export class ExaSearchProvider implements SearchProvider {
         return fromPromise(
             (async (): Promise<SearchResponse> => {
                 const signal = withTimeout(undefined, timeoutMs);
-                const response = await raceAbort(
+                const response = (await raceAbort(
                     this.exaClient().searchAndContents(query.text, {
-                    type: query.type ?? 'auto',
-                    numResults,
-                    text: { maxCharacters: TEXT_BUDGET_CHARS },
-                    highlights: true,
-                    ...(include.length > 0 ? { includeDomains: include } : {}),
-                    ...(exclude.length > 0 ? { excludeDomains: exclude } : {}),
-                    ...(startPublishedDate ? { startPublishedDate } : {}),
-                    ...(query.category ? { category: query.category } : {}),
-                    ...(query.includeText ? { includeText: [query.includeText] } : {}),
-                    ...(query.excludeText ? { excludeText: [query.excludeText] } : {}),
-                }) as unknown as Promise<ExaSearchResponseLike>,
+                        type: query.type ?? 'auto',
+                        numResults,
+                        text: { maxCharacters: TEXT_BUDGET_CHARS },
+                        highlights: true,
+                        summary: true,
+                        ...(include.length > 0 ? { includeDomains: include } : {}),
+                        ...(exclude.length > 0 ? { excludeDomains: exclude } : {}),
+                        ...(startPublishedDate ? { startPublishedDate } : {}),
+                        ...(query.category ? { category: query.category } : {}),
+                        ...(query.includeText ? { includeText: [query.includeText] } : {}),
+                        ...(query.excludeText ? { excludeText: [query.excludeText] } : {}),
+                    }) as unknown as Promise<ExaSearchResponseLike>,
                     signal,
-                ) as unknown as ExaSearchResponseLike;
+                )) as unknown as ExaSearchResponseLike;
                 const results = response.results as unknown as ExaResultLike[];
                 const hits: SearchHit[] = results.map((r) => ({
                     title: r.title ?? '',
@@ -127,11 +130,70 @@ export class ExaSearchProvider implements SearchProvider {
     }
 }
 
-/** Prefer Exa highlights (most relevant extracts) over raw text for the snippet. */
+const MIN_SNIPPET_CHARS = 24;
+
+/**
+ * Build the display snippet, preferring the cleanest available source:
+ *   1. `summary` — LLM-generated abstract, always clean prose (best quality).
+ *   2. `highlights` — extractive excerpts; cleaned of nav chrome/markdown.
+ *   3. `text` — raw page text; cleaned as a last resort.
+ *
+ * Highlights for doc-style pages frequently capture navigation chrome (keyboard
+ * hints, theme pickers, menus) rather than content, so they are filtered.
+ */
 function bestSnippet(r: ExaResultLike): string {
-    const highlights = (r.highlights ?? []).map((h) => h.trim()).filter(Boolean);
-    const source = highlights.length > 0 ? highlights.join(' \u2026 ') : (r.text ?? '');
-    return source.trim().slice(0, SNIPPET_MAX);
+    const summary = cleanHighlight(r.summary ?? '');
+    if (summary.length >= MIN_SNIPPET_CHARS) return cap(summary);
+
+    const sources = (r.highlights ?? []).length > 0 ? (r.highlights as string[]) : [r.text ?? ''];
+    for (const src of sources) {
+        const cleaned = cleanHighlight(src);
+        if (cleaned.length >= MIN_SNIPPET_CHARS) return cap(cleaned);
+    }
+    // Fallback: best-effort clean of the first available source even if short.
+    return cap(summary || cleanHighlight(sources[0] ?? ''));
+}
+
+function cap(s: string): string {
+    return s.length > SNIPPET_MAX ? `${s.slice(0, SNIPPET_MAX).trimEnd()}\u2026` : s;
+}
+
+/** Boilerplate/navigation line patterns commonly captured by Exa highlights. */
+const NOISE_LINE = [
+    /^press\s/i,
+    /navigate between chapters/i,
+    /(show|hide) this help/i,
+    /search in the book/i,
+    /keyboard shortcuts/i,
+    /skip to (main )?content/i,
+    /^(subscribe|sign\s?in|sign\s?up|log\s?in|follow|share|download|menu|home|rss|newsletter|contents?)$/i,
+    /^subscribe\s*sign in$/i,
+    /^\w{3,9} \d{1,2}, \d{4}$/, // bare date stamp, e.g. "June 17, 2026"
+];
+
+function isNoiseLine(line: string): boolean {
+    if (NOISE_LINE.some((re) => re.test(line))) return true;
+    // Single short word with no sentence punctuation: a theme/menu item
+    // (e.g. "Auto", "Light", "Rust"), never real prose.
+    const words = line.split(/\s+/);
+    return words.length === 1 && line.length < 16 && !/[.!?]$/.test(line);
+}
+
+/**
+ * Clean a single highlight: drop markdown chrome and boilerplate lines, then
+ * join the surviving content lines into one compact snippet.
+ */
+export function cleanHighlight(raw: string): string {
+    const lines = raw
+        .split(/\r?\n/)
+        .map((l) =>
+            l
+                .replace(/^[\s>#*+|-]+/, '')
+                .replace(/\|/g, ' ')
+                .trim(),
+        )
+        .filter((l) => l.length > 0 && !isNoiseLine(l));
+    return lines.join(' ').replace(/\s+/g, ' ').trim();
 }
 
 function partitionDomains(domains?: readonly string[]): {

@@ -92,7 +92,14 @@ export function createFetchContentTool(deps: FetchContentDeps): ToolDefinition<F
                 return { content: [{ type: 'text', text: 'Error: provide `url` or `urls`.' }] };
             }
             if (urls.length > 3) {
-                return { content: [{ type: 'text', text: `Error: fetch_content accepts at most 3 URLs at once (got ${urls.length}). Queue them in batches of 3.` }] };
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: `Error: fetch_content accepts at most 3 URLs at once (got ${urls.length}). Queue them in batches of 3.`,
+                        },
+                    ],
+                };
             }
 
             const results = await Promise.all(

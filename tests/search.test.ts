@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_CONFIG } from '../src/core/config.js';
 import { appError } from '../src/core/errors.js';
 import { err, ok } from '../src/core/result.js';
-import { ExaSearchProvider } from '../src/modules/search/providers/exa.provider.js';
+import { cleanHighlight, ExaSearchProvider } from '../src/modules/search/providers/exa.provider.js';
 import type { SearchProvider } from '../src/modules/search/providers/provider.js';
 import { SearchService } from '../src/modules/search/search.service.js';
 import type { SearchResponse } from '../src/modules/search/search.types.js';
@@ -249,5 +249,115 @@ describe('SearchService with retry', () => {
         // failing called 2x (initial + 1 retry), working called 1x
         expect(failing.search).toHaveBeenCalledTimes(2);
         expect(working.search).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('cleanHighlight (snippet noise filter)', () => {
+    it('strips mdbook navigation chrome', () => {
+        const raw = [
+            '## Keyboard shortcuts',
+            'Press \u2190 or \u2192 to navigate between chapters',
+            'Press S or / to search in the book',
+            'Press ? to show this help',
+            'Press Esc to hide this help',
+            '- Auto',
+            '- Light',
+            '- Rust',
+            '- Coal',
+            '- Navy',
+            '- Ayu',
+            'The actual content of the page explains async traits in detail.',
+        ].join('\n');
+        const cleaned = cleanHighlight(raw);
+        expect(cleaned).toBe('The actual content of the page explains async traits in detail.');
+        expect(cleaned).not.toContain('navigate between chapters');
+        expect(cleaned).not.toContain('Keyboard shortcuts');
+        expect(cleaned).not.toContain('Ayu');
+    });
+
+    it('strips markdown heading markers and bare date stamps', () => {
+        const raw =
+            '###### OpenCode news\nJune 17, 2026\nThis release ships copyable range types and assert_matches.';
+        const cleaned = cleanHighlight(raw);
+        expect(cleaned).not.toContain('######');
+        expect(cleaned).not.toContain('June 17, 2026');
+        expect(cleaned).toContain('copyable range types');
+    });
+
+    it('drops subscribe/sign-in/share boilerplate', () => {
+        const raw =
+            'Subscribe\nSign in\nShare\nFollow\nRust 1.96 stabilizes several const trait APIs.';
+        const cleaned = cleanHighlight(raw);
+        expect(cleaned).toBe('Rust 1.96 stabilizes several const trait APIs.');
+    });
+
+    it('collapses internal whitespace', () => {
+        expect(cleanHighlight('Rust   1.96   adds\n\ncopyable ranges today.')).toBe(
+            'Rust 1.96 adds copyable ranges today.',
+        );
+    });
+
+    it('returns empty for pure-noise input', () => {
+        const raw = '## Keyboard shortcuts\nPress ? to show this help\n- Auto\n- Light';
+        expect(cleanHighlight(raw)).toBe('');
+    });
+});
+
+describe('ExaSearchProvider snippet sourcing', () => {
+    it('prefers the clean summary over noisy highlights', async () => {
+        const provider = new ExaSearchProvider(config);
+        const fakeExa = {
+            searchAndContents: vi.fn().mockResolvedValue({
+                results: [
+                    {
+                        url: 'https://docs.example.com',
+                        title: 'Docs',
+                        summary: 'A concise LLM summary of the page content.',
+                        highlights: ['Press \u2190 or \u2192 to navigate between chapters'],
+                        text: 'raw text',
+                    },
+                ],
+            }),
+        };
+        (provider as unknown as { exaClient: () => unknown }).exaClient = () => fakeExa;
+
+        const r = await provider.search({ text: 'test' });
+        expect(r.ok).toBe(true);
+        if (r.ok) {
+            expect(r.value.hits[0]?.snippet).toBe('A concise LLM summary of the page content.');
+        }
+    });
+
+    it('requests summary in addition to highlights', async () => {
+        const provider = new ExaSearchProvider(config);
+        const fakeExa = { searchAndContents: vi.fn().mockResolvedValue({ results: [] }) };
+        (provider as unknown as { exaClient: () => unknown }).exaClient = () => fakeExa;
+
+        await provider.search({ text: 'test' });
+        const options = fakeExa.searchAndContents.mock.calls[0]?.[1] as Record<string, unknown>;
+        expect(options.summary).toBe(true);
+        expect(options.highlights).toBe(true);
+    });
+
+    it('falls back to cleaned highlights when summary is absent', async () => {
+        const provider = new ExaSearchProvider(config);
+        const fakeExa = {
+            searchAndContents: vi.fn().mockResolvedValue({
+                results: [
+                    {
+                        url: 'https://x.com',
+                        title: 'X',
+                        highlights: ['Press ? to show this help\nRust 1.96 adds copyable ranges.'],
+                    },
+                ],
+            }),
+        };
+        (provider as unknown as { exaClient: () => unknown }).exaClient = () => fakeExa;
+
+        const r = await provider.search({ text: 'test' });
+        expect(r.ok).toBe(true);
+        if (r.ok) {
+            expect(r.value.hits[0]?.snippet).toBe('Rust 1.96 adds copyable ranges.');
+        }
     });
 });

@@ -50,7 +50,10 @@ export async function retry<T>(
     config: RetryConfig = DEFAULT_RETRY,
     signal?: AbortSignal,
 ): Promise<Result<T>> {
-    let lastResult: Result<T, AppError> = { ok: false, error: { kind: 'unknown', message: 'No attempt made', retryable: false } };
+    let lastResult: Result<T, AppError> = {
+        ok: false,
+        error: { kind: 'unknown', message: 'No attempt made', retryable: false },
+    };
     for (let attempt = 0; attempt <= config.maxRetries; attempt++) {
         if (signal?.aborted) {
             return {
@@ -78,5 +81,10 @@ export async function retry<T>(
             return lastResult;
         }
     }
-    return lastResult ?? { ok: false, error: { kind: 'unknown', message: 'No result', retryable: false } };
+    return (
+        lastResult ?? {
+            ok: false,
+            error: { kind: 'unknown', message: 'No result', retryable: false },
+        }
+    );
 }

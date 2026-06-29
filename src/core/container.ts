@@ -66,13 +66,19 @@ export function createContainer(options: ContainerOptions = {}): Container {
         maxDelayMs: config.retry.maxDelayMs,
     };
 
-    const search = buildSearcher(new SearchService({ providers: [exaSearch], retry: retryConfig }), cache);
+    const search = buildSearcher(
+        new SearchService({ providers: [exaSearch], retry: retryConfig }),
+        cache,
+    );
     const fetch = buildFetcher(
         new FetchService({ providers: [impers, exaContents], retry: retryConfig }),
         cache,
     );
     const summarize = new SummarizeService({ llm: options.llm });
-    const answer = buildAnswerer(new AnswerService({ providers: [exaAnswer], retry: retryConfig }), cache);
+    const answer = buildAnswerer(
+        new AnswerService({ providers: [exaAnswer], retry: retryConfig }),
+        cache,
+    );
 
     let disposed = false;
     return {

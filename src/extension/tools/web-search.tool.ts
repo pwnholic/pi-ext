@@ -1,10 +1,6 @@
 import { Type } from 'typebox';
 import type { Searcher } from '../../modules/search/search.service.js';
-import type {
-    SearchCategory,
-    SearchQuery,
-    SearchType,
-} from '../../modules/search/search.types.js';
+import type { SearchCategory, SearchQuery, SearchType } from '../../modules/search/search.types.js';
 import type { ToolDefinition, ToolTextResult } from '../ports.js';
 
 export interface WebSearchParams {
@@ -122,10 +118,9 @@ export function createWebSearchTool(service: Searcher): ToolDefinition<WebSearch
                 texts.map((text) => service.search(toQuery(text, params), signal)),
             );
 
-            // Deduplicate hits by URL across all queries, keeping the highest-scoring occurrence.
-            const { blocks, totalUnique } = dedupeAndFormat(results, texts);
+            const { text, totalUnique } = formatResults(results, texts);
             return {
-                content: [{ type: 'text', text: blocks }],
+                content: [{ type: 'text', text }],
                 details: { queries: texts.length, uniqueUrls: totalUnique },
             };
         },
@@ -145,40 +140,22 @@ function toQuery(text: string, params: WebSearchParams): SearchQuery {
     };
 }
 
-function formatResponse(r: import('../../modules/search/search.types.js').SearchResponse): string {
-    const header = `# ${r.query} (${r.provider}, ${r.tookMs}ms)`;
-    const hits = r.hits
-        .map(
-            (h, i) =>
-                `${i + 1}. ${h.title}\n   ${h.url}${h.author ? `\n   ${h.author}` : ''}\n   ${h.snippet}`,
-        )
-        .join('\n');
-    return `${header}\n\n${hits}`;
-}
-
-type SearchResult = { ok: true; value: import('../../modules/search/search.types.js').SearchResponse } | { ok: false; error: { message: string } };
+type SearchResponse = import('../../modules/search/search.types.js').SearchResponse;
+type SearchHit = import('../../modules/search/search.types.js').SearchHit;
+type SearchResult = { ok: true; value: SearchResponse } | { ok: false; error: { message: string } };
 
 /**
- * Deduplicate hits by URL across multiple query results, keeping the
- * highest-scoring occurrence. When duplicates are found, a consolidated
- * block lists all unique hits under a "Merged Results" header.
+ * Format search results as a single deduplicated list. Hits are merged by URL
+ * across all queries (keeping the highest-scoring occurrence, first-seen order),
+ * so the agent gets one clean list instead of repeated per-query blocks.
  */
-function dedupeAndFormat(
+function formatResults(
     results: SearchResult[],
     texts: string[],
-): { blocks: string; totalUnique: number } {
-    // If only one query (or all failed), skip dedup and format per-query.
-    const okResults = results.filter((r): r is { ok: true; value: import('../../modules/search/search.types.js').SearchResponse } => r.ok);
-    if (okResults.length <= 1) {
-        const blocks = results.map((r, i) =>
-            r.ok ? formatResponse(r.value) : `Query "${texts[i]}" failed: ${r.error.message}`,
-        );
-        return { blocks: blocks.join('\n\n---\n\n'), totalUnique: okResults[0]?.value.hits.length ?? 0 };
-    }
-
-    // Deduplicate by URL, preferring the hit with the highest score.
-    const byUrl = new Map<string, import('../../modules/search/search.types.js').SearchHit>();
-    for (const r of okResults) {
+): { text: string; totalUnique: number } {
+    const byUrl = new Map<string, SearchHit>();
+    for (const r of results) {
+        if (!r.ok) continue;
         for (const h of r.value.hits) {
             const existing = byUrl.get(h.url);
             if (!existing || (h.score ?? 0) > (existing.score ?? 0)) {
@@ -186,17 +163,47 @@ function dedupeAndFormat(
             }
         }
     }
+    const hits = [...byUrl.values()];
 
-    const uniqueHits = [...byUrl.values()];
-    const perQueryBlocks = results.map((r, i) =>
-        r.ok ? formatResponse(r.value) : `Query "${texts[i]}" failed: ${r.error.message}`,
-    );
-    const mergedBlock = `## Merged Results (${uniqueHits.length} unique, deduped from ${okResults.length} queries)\n${uniqueHits
-        .map((h, i) => `${i + 1}. ${h.title}\n   ${h.url}${h.author ? `\n   ${h.author}` : ''}\n   ${h.snippet}`)
-        .join('\n')}`;
+    const header =
+        texts.length === 1
+            ? `# web_search: "${texts[0]}" \u2014 ${hits.length} result(s)`
+            : `# web_search: ${texts.length} queries \u2014 ${hits.length} unique result(s)\n${texts
+                  .map((t) => `  - ${t}`)
+                  .join('\n')}`;
 
-    return {
-        blocks: `${perQueryBlocks.join('\n\n---\n\n')}\n\n---\n\n${mergedBlock}`,
-        totalUnique: uniqueHits.length,
-    };
+    const body = hits.length > 0 ? hits.map(formatHit).join('\n\n') : 'No results.';
+
+    const failures = results
+        .map((r, i) => (r.ok ? undefined : `Query "${texts[i]}" failed: ${r.error.message}`))
+        .filter((f): f is string => f !== undefined);
+    const failBlock = failures.length > 0 ? `\n\n${failures.join('\n')}` : '';
+
+    return { text: `${header}\n\n${body}${failBlock}`, totalUnique: hits.length };
+}
+
+function formatHit(h: SearchHit, i: number): string {
+    const meta = [h.url, h.author].filter(Boolean).join(' \u00b7 ');
+    const snippet = cleanSnippet(h.title, h.snippet);
+    return `${i + 1}. ${h.title}\n   ${meta}${snippet ? `\n   ${snippet}` : ''}`;
+}
+
+const SNIPPET_DISPLAY_MAX = 200;
+
+/**
+ * Clean a snippet for display: collapse whitespace, strip a leading copy of the
+ * title (Exa highlights frequently repeat it), and cap the length.
+ */
+function cleanSnippet(title: string, snippet: string): string {
+    let s = snippet.replace(/\s+/g, ' ').trim();
+    const t = title.trim();
+    if (t && s.toLowerCase().startsWith(t.toLowerCase())) {
+        s = s
+            .slice(t.length)
+            .replace(/^[\s:\u2013\u2014|-]+/, '')
+            .trim();
+    }
+    return s.length > SNIPPET_DISPLAY_MAX
+        ? `${s.slice(0, SNIPPET_DISPLAY_MAX).trimEnd()}\u2026`
+        : s;
 }

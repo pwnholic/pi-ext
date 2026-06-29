@@ -83,10 +83,14 @@ export class ImpersFetchProvider implements FetchProvider {
 
             if (kind === 'pdf' || kind === 'binary') {
                 return err(
-                    appError('invalid_input', `Unsupported content type (${contentType || kind}) for ${request.url}`, {
-                        source: this.name,
-                        retryable: true,
-                    }),
+                    appError(
+                        'invalid_input',
+                        `Unsupported content type (${contentType || kind}) for ${request.url}`,
+                        {
+                            source: this.name,
+                            retryable: true,
+                        },
+                    ),
                 );
             }
 
