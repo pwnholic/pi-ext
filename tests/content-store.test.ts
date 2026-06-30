@@ -3,6 +3,7 @@ import {
     InMemoryContentStore,
     renderDocOutline,
     renderHits,
+    renderSection,
     type StoredDoc,
 } from '../src/core/content-store.js';
 import { buildSections } from '../src/core/sections.js';
@@ -115,5 +116,38 @@ describe('presentation', () => {
         expect(outline).toContain('part 2');
         // Only a genuine empty-heading intro would show "(intro)".
         expect(outline).not.toContain('(intro)');
+    });
+
+    it('renderSection includes char count and nudges large sections', () => {
+        const bigDoc: StoredDoc = {
+            url: 'https://x.com',
+            title: 'Doc',
+            sections: [
+                { id: '0', level: 1, heading: 'Big', content: 'a'.repeat(5000), charCount: 5000 },
+            ],
+            fullContent: 'a'.repeat(5000),
+            totalChars: 5000,
+        };
+        const section = bigDoc.sections[0];
+        if (!section) throw new Error('expected section');
+        const out = renderSection(bigDoc, 0, section);
+        expect(out).toContain('chars');
+        expect(out).toContain('large — use offset/limit');
+    });
+
+    it('renderSection omits the large nudge when a limit is set', () => {
+        const bigDoc: StoredDoc = {
+            url: 'https://x.com',
+            title: 'Doc',
+            sections: [
+                { id: '0', level: 1, heading: 'Big', content: 'a'.repeat(5000), charCount: 5000 },
+            ],
+            fullContent: 'a'.repeat(5000),
+            totalChars: 5000,
+        };
+        const section = bigDoc.sections[0];
+        if (!section) throw new Error('expected section');
+        const out = renderSection(bigDoc, 0, section, 0, 500);
+        expect(out).not.toContain('large — use offset/limit');
     });
 });

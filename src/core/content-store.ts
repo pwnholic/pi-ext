@@ -139,7 +139,10 @@ export function renderSection(
             ? section.content.slice(offset, offset + limit)
             : section.content.slice(offset);
     const title = section.heading || '(intro)';
-    return `# ${doc.title || doc.url} › ${title}\n<${doc.url}> [${docIndex}:${section.id}]\n\n${body}`;
+    const size = formatChars(section.charCount);
+    const nudge =
+        limit === undefined && section.charCount > 3000 ? ' (large — use offset/limit)' : '';
+    return `# ${doc.title || doc.url} › ${title}\n<${doc.url}> [${docIndex}:${section.id}] · ${size}${nudge}\n\n${body}`;
 }
 
 export function renderHits(hits: readonly SectionHit[], query: string): string {

@@ -117,7 +117,20 @@ function run(content: ContentStore, params: GetContentParams): ToolTextResult {
         if (!section) {
             return text(`No section "${params.section}" in document ${docIndex}.`);
         }
-        return text(renderSection(doc, docIndex, section, params.offset, params.limit), {
+        const offset = params.offset ?? 0;
+        const limit = params.limit;
+        const body = renderSection(doc, docIndex, section, offset, limit);
+        let footer = '';
+        if (limit !== undefined) {
+            const shown = Math.min(limit, Math.max(0, section.charCount - offset));
+            const remaining = Math.max(0, section.charCount - offset - shown);
+            if (remaining > 0) {
+                footer = `\n\n> Showing ${shown} of ${section.charCount} chars (offset ${offset}). ${remaining} remain. Next: get_content({ responseId: "${params.responseId}", index: ${docIndex}, section: "${section.id}", offset: ${offset + shown}, limit: ${limit} }).`;
+            } else {
+                footer = `\n\n> End of section (${section.charCount} chars).`;
+            }
+        }
+        return text(`${body}${footer}`, {
             responseId: params.responseId,
             section: section.id,
         });
