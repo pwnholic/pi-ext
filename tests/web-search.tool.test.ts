@@ -23,7 +23,8 @@ describe('web_search tool formatting', () => {
     it('errors when neither query nor queries is provided', async () => {
         const tool = createWebSearchTool(searcherReturning({}));
         const r = await tool.execute({}, signal);
-        expect(r.content[0]?.text).toContain('provide `query` or `queries`');
+        expect(r.content[0]?.text).toContain('`query`');
+        expect(r.content[0]?.text).toContain('`queries`');
     });
 
     it('renders a single query as one clean list with no duplication', async () => {

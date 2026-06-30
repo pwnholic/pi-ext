@@ -28,60 +28,180 @@ export function createGetContentTool(content: ContentStore): ToolDefinition<GetC
     return {
         name: 'get_content',
         label: 'Get Content',
+
         description: [
-            'Retrieve stored page content captured by `fetch_content`, keeping the context window lean.',
-            'Three modes of operation:',
+            'Retrieve stored page content from a previous `fetch_content` call.',
+            'Keeps the context window lean by loading only the sections you need.',
             '',
             '## Modes',
-            '1. OUTLINE (no `section`, no `query`): Returns a navigable list of all sections with IDs,',
-            '   headings, and char counts. ALWAYS start here to discover available section IDs.',
-            '2. SECTION (`section` set): Returns the full content of one section by ID.',
-            '   Use `offset`/`limit` for pagination on very long sections.',
-            '3. SEARCH (`query` set): Rank-searches sections via FTS5/BM25 (or term-frequency fallback).',
-            '   Returns top 5 matches with snippets. Use when you do not know which section is relevant.',
+            'OUTLINE (no section, no query):',
+            '  Returns a navigable list of all sections with IDs, headings, and char counts.',
+            '  ALWAYS start here to discover available section IDs.',
+            '',
+            '  Output example:',
+            '  ```',
+            '  [0] API Documentation',
+            '  <https://example.com/docs> — 24.5k chars, 8 section(s)',
+            '    [0] Introduction — 1.2k chars',
+            '    [1] ## Getting Started — 3.4k chars',
+            '    [2] ## Authentication — 5.1k chars',
+            '    [3] ## API Reference — 8.2k chars',
+            '    [4] ## Rate Limits — 1.8k chars',
+            '    [5] ## Error Codes — 2.1k chars',
+            '    [6] ## Changelog — 1.5k chars',
+            '    [7] ## Support — 1.2k chars',
+            '  ```',
+            '',
+            'SECTION (section set):',
+            '  Returns full content of one section by ID. Use offset/limit for pagination.',
+            '',
+            '  Output example:',
+            '  ```',
+            '  # API Documentation › Authentication',
+            '  <https://example.com/docs> [0:2] · 5.1k chars',
+            '',
+            '  All API requests require a Bearer token in the Authorization header...',
+            '  ```',
+            '',
+            'SEARCH (query set):',
+            '  Rank-searches sections via BM25. Returns top 5 matches with snippets.',
+            '  Use when you do not know which section contains the information.',
+            '',
+            '  Output example:',
+            '  ```',
+            '  [0:2] Authentication',
+            '  "...use OAuth2 refresh tokens to obtain new access tokens..."',
+            '',
+            '  ---',
+            '',
+            '  [0:5] Error Codes',
+            '  "...invalid_grant error when refresh token is expired..."',
+            '',
+            '  Fetch a full section: get_content({ responseId, index, section }).',
+            '  ```',
             '',
             '## Parameters',
-            '- `responseId` (string)   REQUIRED. The ID returned by `fetch_content` (10-char hex).',
-            '- `index` (number)       Document index when multiple URLs were fetched. Default 0.',
-            '- `section` (string)     Section ID from the outline (e.g. "3").',
-            '- `query` (string)       Rank-search keywords across all sections. Use concise keywords, not full sentences.',
-            '- `offset` (number)      Character offset for section pagination. Default 0.',
-            '- `limit` (number)       Max characters to return from the section (for pagination).',
+            '| Param | Type | Default | Description |',
+            '|-------|------|---------|-------------|',
+            '| `responseId` | string | REQUIRED | ID from `fetch_content` result (10-char hex) |',
+            '| `index` | number | 0 | Document index for multi-URL fetches (0=first, 1=second) |',
+            '| `section` | string | - | Section ID from outline (e.g. "3") |',
+            '| `query` | string | - | Search keywords for rank-search (concise terms, not sentences) |',
+            '| `offset` | number | 0 | Character offset for section pagination |',
+            '| `limit` | number | - | Max characters to return from a section |',
             '',
-            '## Best Practices',
-            '1. ALWAYS call without `section`/`query` first to get the outline and discover section IDs.',
-            '2. Then call with `section: "<id>"` to read the relevant section in full.',
-            '3. If you do not know which section is relevant, use `query` with concise keywords:',
-            '   Good: { responseId: "...", query: "oauth2 token refresh" }',
-            '   Bad:  { responseId: "...", query: "how does the authentication system handle OAuth2 token refresh" }',
-            '4. For multi-URL fetches, ALWAYS specify `index` (0 = first URL, 1 = second, etc.).',
-            '5. If responseId is expired ("No stored content"), re-fetch the page with `fetch_content`.',
-            '   Max 50 responses are retained per session (LRU eviction).',
-            '',
-            '## Anti-Patterns',
-            '- Calling with `section` before checking the outline (section ID may not exist).',
-            '- Using a long natural-language sentence as `query` (degrades rank-search quality).',
-            '- Forgetting `index` on multi-document responses (defaults to 0, may read wrong page).',
+            '## Limitations',
+            '- Max 50 stored responses per session (LRU eviction). Old responseIds may expire.',
+            '- When expired, re-fetch with `fetch_content`.',
+            '- `section` and `query` are mutually exclusive. Use one or the other, not both.',
         ].join('\n'),
+
         promptSnippet:
-            'Retrieve stored page sections or rank-search stored content by responseId; ALWAYS get the outline first (no section/query), then pull specific sections or search with concise keywords; specify index for multi-URL fetches.',
+            'Retrieve stored page sections by responseId. ALWAYS get outline first (no section/query), then pull sections by ID or search with keywords.',
+
         promptGuidelines: [
-            'ALWAYS call `get_content` without `section` or `query` first to get the section outline and discover available section IDs.',
-            'Then call with `section: "<id>"` to read a specific section in full. Never guess section IDs without checking the outline first.',
-            'When searching, use concise keywords, not full natural-language sentences. Good: query: "oauth2 token refresh". Bad: query: "how does the authentication system handle OAuth2 token refresh".',
-            'For multi-URL fetches (when `urls` was used in `fetch_content`), ALWAYS specify `index` (0 = first URL, 1 = second, etc.) to target the correct document.',
-            'For very long sections, use `offset` and `limit` for pagination: { section: "7", offset: 0, limit: 2000 } retrieves the first 2,000 characters.',
-            'If the responseId is expired ("No stored content"), re-fetch the page with `fetch_content`. Max 50 responses retained per session (LRU eviction).',
+            'WORKFLOW: outline first -> identify relevant section IDs -> fetch specific sections.',
+            '',
+            'Step 1 - Get outline:',
+            '  { responseId: "a1b2c3d4e5" }',
+            '',
+            'Step 2a - Fetch a section:',
+            '  { responseId: "a1b2c3d4e5", section: "3" }',
+            '',
+            'Step 2b - Or search when unsure which section:',
+            '  { responseId: "a1b2c3d4e5", query: "oauth2 refresh token" }',
+            '',
+            'Step 3 - Paginate if section is long:',
+            '  { responseId: "a1b2c3d4e5", section: "3", offset: 0, limit: 2000 }',
+            '  { responseId: "a1b2c3d4e5", section: "3", offset: 2000, limit: 2000 }',
+            '',
+            'For multi-URL fetches, ALWAYS specify `index`:',
+            '  { responseId: "a1b2c3d4e5", index: 1 }  // second URL from the batch',
+            '',
+            'Search query style:',
+            '  GOOD: { query: "oauth2 token refresh" }',
+            '  BAD:  { query: "how does the authentication system handle OAuth2 token refresh" }',
+            '',
+            'Error recovery:',
+            '  - "No stored content" -> responseId expired, re-fetch with `fetch_content`',
+            '  - "Section not found" -> get outline first, section IDs may have changed',
+            '  - "Invalid responseId" -> check for typos, must be 10-char hex from fetch_content result',
         ],
+
         parameters: Type.Object({
-            responseId: Type.String(),
-            index: Type.Optional(Type.Number()),
-            section: Type.Optional(Type.String()),
-            query: Type.Optional(Type.String()),
-            offset: Type.Optional(Type.Number()),
-            limit: Type.Optional(Type.Number()),
+            responseId: Type.String({
+                description: 'ID from `fetch_content` result details (10-char hex string)',
+            }),
+            index: Type.Optional(
+                Type.Number({
+                    description:
+                        'Document index for multi-URL fetches (0 = first URL, 1 = second, etc.)',
+                    minimum: 0,
+                    default: 0,
+                }),
+            ),
+            section: Type.Optional(
+                Type.String({
+                    description:
+                        'Section ID from the outline (e.g. "3"). Mutually exclusive with query.',
+                }),
+            ),
+            query: Type.Optional(
+                Type.String({
+                    description:
+                        'Search keywords for rank-search. Use concise terms, not full sentences. Mutually exclusive with section.',
+                }),
+            ),
+            offset: Type.Optional(
+                Type.Number({
+                    description: 'Character offset for section pagination',
+                    minimum: 0,
+                    default: 0,
+                }),
+            ),
+            limit: Type.Optional(
+                Type.Number({
+                    description: 'Max characters to return from a section',
+                    minimum: 100,
+                }),
+            ),
         }),
+
         execute(params): Promise<ToolTextResult> {
+            if (!params.responseId || !/^[a-f0-9]{10}$/i.test(params.responseId)) {
+                return Promise.resolve({
+                    content: [
+                        {
+                            type: 'text',
+                            text: [
+                                `Error: Invalid responseId format "${params.responseId}".`,
+                                '',
+                                'responseId must be a 10-character hex string from a `fetch_content` result.',
+                                'Check the `details.responseId` field from your fetch_content call.',
+                                '',
+                                'If you do not have the responseId, re-fetch the page with `fetch_content`.',
+                            ].join('\n'),
+                        },
+                    ],
+                });
+            }
+
+            if (params.section && params.query) {
+                return Promise.resolve({
+                    content: [
+                        {
+                            type: 'text',
+                            text: [
+                                'Error: `section` and `query` are mutually exclusive.',
+                                '',
+                                'To read a specific section: { responseId: "...", section: "3" }',
+                                'To search across sections: { responseId: "...", query: "your keywords" }',
+                            ].join('\n'),
+                        },
+                    ],
+                });
+            }
+
             return Promise.resolve(run(content, params));
         },
     };

@@ -15,6 +15,8 @@ export interface FetchContentParams {
     summarize?: boolean;
     summaryStyle?: SummaryStyle;
     summarySentences?: number;
+    /** Custom instruction guiding what the summary focuses on (requires `summarize: true`). */
+    summaryPrompt?: string;
 }
 
 export interface FetchContentDeps {
@@ -36,82 +38,171 @@ export function createFetchContentTool(deps: FetchContentDeps): ToolDefinition<F
         name: 'fetch_content',
         label: 'Fetch Content',
         description: [
-            'Fetch URL(s) using impers (curl-impersonate) and return readable content as markdown.',
-            'Bypasses common bot protection via browser TLS/HTTP fingerprint impersonation.',
-            'Large pages (> 6,000 chars) are stored out-of-context and return a navigable',
-            'section outline — retrieve detail via `get_content` using the returned `responseId`.',
-            'Set `summarize: true` to return a concise LLM summary instead of full content.',
+            'Fetch URL(s) with browser TLS fingerprint impersonation (curl-impersonate).',
+            'Returns readable content as markdown, with options for LLM summarization.',
+            '',
+            '## Behavior',
+            '- Bypasses bot protection via browser TLS/HTTP fingerprint impersonation.',
+            '- Large pages (>6,000 chars): returns section outline only. Use `get_content` with `responseId` to retrieve sections.',
+            '- Small pages (≤6,000 chars): returns full markdown content.',
             '',
             '## Parameters',
-            '- `url` (string)             Single URL to fetch. Must be http/https.',
-            '- `urls` (string[])          Multiple URLs (max 3 concurrent — additional URLs queue).',
-            '- `impersonate` (string)     Browser fingerprint: "chrome" (default), "safari", "firefox".',
-            '- `summarize` (boolean)     When true, return an LLM summary instead of full content.',
-            '- `summaryStyle` (string)    "sentences" (default) or "bullets".',
-            '- `summarySentences` (number) Target length: sentence count for "sentences", bullet count for "bullets". Default 3.',
+            '| Param | Type | Default | Description |',
+            '|-------|------|---------|-------------|',
+            '| `url` | string | - | Single URL (http/https). Mutually exclusive with `urls`. |',
+            '| `urls` | string[] | - | Multiple URLs (max 3 concurrent). |',
+            '| `impersonate` | string | "chrome" | Browser fingerprint: "chrome", "safari", or "firefox". |',
+            '| `summarize` | boolean | false | Return LLM summary instead of full content. |',
+            '| `summaryStyle` | string | "sentences" | "sentences" or "bullets". |',
+            '| `summarySentences` | number | 3 | Target length: sentence count or bullet count. |',
+            '| `summaryPrompt` | string | null | Custom focus instruction (requires `summarize: true`). |',
             '',
-            '## Best Practices',
-            '1. Use `urls` array to fetch 1-3 URLs concurrently. Never exceed 3 — they will queue.',
-            '2. For data-dense pages, prefer summarize with bullets:',
-            '   { url: "...", summarize: true, summaryStyle: "bullets", summarySentences: 5 }',
-            '3. If a site returns 403/429 (blocked), retry with a different `impersonate` value:',
-            '   "chrome" → "safari" → "firefox"',
-            '4. ALWAYS save the `responseId` from the result details. It is the key for `get_content`.',
-            '5. For large pages, the tool returns a section outline (not full content).',
-            '   Use `get_content` with the responseId to navigate specific sections.',
+            '## Output Format',
+            'Each URL result is separated by `---`.',
+            'Successful fetch includes: URL, content/outline, and `responseId` if content was stored.',
+            'Failed fetch includes: URL, error status, and suggested action.',
             '',
-            '## Anti-Patterns',
-            '- Fetching > 3 URLs at once (silently queues, slow).',
-            '- summarize: true with default "sentences" style on data-heavy pages (loses facts). Use "bullets" instead.',
-            '- Ignoring the `responseId` in the result (cannot retrieve stored content later).',
+            '## Error Handling',
+            '- 403/429: Site blocked the request. Retry with different `impersonate` value.',
+            '- Timeout: Network issue. Retry once, then report failure.',
+            '- Invalid URL: Returns error immediately without fetching.',
+            '- >3 URLs: Returns error. Split into batches of 3.',
         ].join('\n'),
+
         promptSnippet:
-            'Fetch URL(s) via impers with browser TLS impersonation; max 3 concurrent URLs; large pages return a section outline — save the responseId for get_content; use summarize + bullets for quick fact extraction; retry with different impersonate on 403/429.',
+            'Fetch 1-3 URLs with TLS impersonation. Large pages return outlines — save `responseId` for `get_content`. Use `summarize: true` + `bullets` for data extraction. On 403/429, retry with different `impersonate`.',
+
         promptGuidelines: [
-            'Fetch at most 3 URLs concurrently via the `urls` array. Additional URLs silently queue and slow down execution.',
-            'ALWAYS save the `responseId` from the result details — it is the key for retrieving stored content via `get_content`.',
-            'For data-dense pages (API docs, specs, comparisons), prefer summarize with bullets: { summarize: true, summaryStyle: "bullets", summarySentences: 5 }.',
-            'For narrative content (articles, blog posts), use summarize with sentences: { summarize: true, summaryStyle: "sentences", summarySentences: 3 }.',
-            'If a site returns 403 or 429 (blocked), retry with a different `impersonate` value: "chrome" (default) → "safari" → "firefox".',
-            'Pages larger than 6,000 chars return a section outline, not full content. Use `get_content` with the responseId to navigate specific sections.',
-            'Avoid fetching more than 3 URLs at once — they will queue silently and increase latency.',
+            // Concurrency
+            'Fetch at most 3 URLs per call via `urls` array. Never exceed — it returns an error, not a queue.',
+            '',
+            // Response ID handling
+            'ALWAYS capture `responseId` from the result. It is required to retrieve stored content via `get_content`.',
+            '',
+            // Summarization strategy
+            'For data-dense pages (API docs, specs, comparisons, pricing):',
+            '  { url: "...", summarize: true, summaryStyle: "bullets", summarySentences: 5 }',
+            '',
+            'For narrative content (articles, blog posts, news):',
+            '  { url: "...", summarize: true, summaryStyle: "sentences", summarySentences: 3 }',
+            '',
+            'For focused extraction (e.g., pricing only):',
+            '  { url: "...", summarize: true, summaryStyle: "bullets", summarySentences: 5, summaryPrompt: "Extract only pricing tiers and limits" }',
+            '',
+            // Fallback strategy
+            'If blocked (403/429), retry in this order: "chrome" → "safari" → "firefox".',
+            '',
+            // Large page handling
+            'Pages >6,000 chars return a section outline. To get specific sections:',
+            '  1. Note the `responseId` from the result',
+            '  2. Call `get_content` with that `responseId` and desired section index/range',
         ],
+
         parameters: Type.Object({
-            url: Type.Optional(Type.String()),
-            urls: Type.Optional(Type.Array(Type.String())),
-            impersonate: Type.Optional(Type.String()),
-            summarize: Type.Optional(Type.Boolean()),
-            summaryStyle: Type.Optional(
-                Type.Union([Type.Literal('sentences'), Type.Literal('bullets')]),
+            url: Type.Optional(Type.String({ description: 'Single URL to fetch (http/https)' })),
+            urls: Type.Optional(
+                Type.Array(Type.String(), {
+                    description: 'Multiple URLs to fetch (max 3)',
+                    maxItems: 3,
+                }),
             ),
-            summarySentences: Type.Optional(Type.Number()),
+            impersonate: Type.Optional(
+                Type.String({
+                    description: 'Browser fingerprint to impersonate',
+                    enum: ['chrome', 'safari', 'firefox'],
+                    default: 'chrome',
+                }),
+            ),
+            summarize: Type.Optional(
+                Type.Boolean({
+                    description: 'Return LLM summary instead of full content',
+                    default: false,
+                }),
+            ),
+            summaryStyle: Type.Optional(
+                Type.Union([Type.Literal('sentences'), Type.Literal('bullets')], {
+                    description: 'Summary format style',
+                }),
+            ),
+            summarySentences: Type.Optional(
+                Type.Number({
+                    description: 'Target length (sentence count or bullet count)',
+                    minimum: 1,
+                    maximum: 20,
+                    default: 3,
+                }),
+            ),
+            summaryPrompt: Type.Optional(
+                Type.String({
+                    description:
+                        'Custom instruction for what the summary focuses on (requires summarize: true). Replaces the default generic instruction; length/format from style still apply.',
+                }),
+            ),
         }),
+
         async execute(params, signal): Promise<ToolTextResult> {
             const urls = params.urls ?? (params.url ? [params.url] : []);
+
             if (urls.length === 0) {
-                return { content: [{ type: 'text', text: 'Error: provide `url` or `urls`.' }] };
-            }
-            if (urls.length > 3) {
                 return {
                     content: [
                         {
                             type: 'text',
-                            text: `Error: fetch_content accepts at most 3 URLs at once (got ${urls.length}). Queue them in batches of 3.`,
+                            text: 'Error: Provide either `url` or `urls` parameter.',
                         },
                     ],
                 };
             }
 
+            // Clearer error message with guidance
+            if (urls.length > 3) {
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: [
+                                `Error: Maximum 3 URLs per call (received ${urls.length}).`,
+                                '',
+                                'Split your request into batches:',
+                                `  Batch 1: ${urls
+                                    .slice(0, 3)
+                                    .map((u) => `"${u}"`)
+                                    .join(', ')}`,
+                                `  Batch 2: ${urls
+                                    .slice(3, 6)
+                                    .map((u) => `"${u}"`)
+                                    .join(', ')}`,
+                                `  ... (${Math.ceil(urls.length / 3)} batches total)`,
+                            ]
+                                .filter(Boolean)
+                                .join('\n'),
+                        },
+                    ],
+                };
+            }
+
+            // Validate URLs before fetching
+            const invalidUrls = urls.filter((u) => !u.match(/^https?:\/\//i));
+            if (invalidUrls.length > 0) {
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: `Error: Invalid URL format (must be http/https): ${invalidUrls.map((u) => `"${u}"`).join(', ')}`,
+                        },
+                    ],
+                };
+            }
+
+            const fetchParams = {
+                ...(params.impersonate ? { impersonate: params.impersonate } : {}),
+            };
+
             const results = await Promise.all(
-                urls.map((url) =>
-                    deps.fetch.fetch(
-                        { url, ...(params.impersonate ? { impersonate: params.impersonate } : {}) },
-                        signal,
-                    ),
-                ),
+                urls.map((url) => deps.fetch.fetch({ url, ...fetchParams }, signal)),
             );
 
-            // Store full content of every successful fetch for out-of-context retrieval.
+            // Store full content for out-of-context retrieval
             const docs: StoredDoc[] = [];
             const docIndexByResult = results.map((r) => {
                 if (!r.ok) return -1;
@@ -222,6 +313,7 @@ async function trySummarize(
             ...(params.summarySentences !== undefined
                 ? { maxSentences: params.summarySentences }
                 : {}),
+            ...(params.summaryPrompt ? { systemPrompt: params.summaryPrompt } : {}),
         },
         signal,
     );

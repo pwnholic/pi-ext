@@ -34,12 +34,13 @@ describe('get_content tool', () => {
     it('errors when responseId is missing', async () => {
         const { store } = storeWith([doc('# Hi\n\nbody')]);
         const r = await run(store, {});
-        expect(r.text).toContain('`responseId` is required');
+        expect(r.text).toContain('responseId');
     });
 
     it('errors on an unknown/expired responseId', async () => {
         const { store } = storeWith([doc('# Hi\n\nbody')]);
-        const r = await run(store, { responseId: 'nope12345' });
+        // Valid 10-char hex format, but not in the store.
+        const r = await run(store, { responseId: '0123456789abcdef'.slice(0, 10) });
         expect(r.text).toContain('No stored content');
     });
 

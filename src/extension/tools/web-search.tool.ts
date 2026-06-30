@@ -25,99 +25,232 @@ export function createWebSearchTool(service: Searcher): ToolDefinition<WebSearch
         name: 'web_search',
         label: 'Web Search',
         description: [
-            'Search the web via Exa and return synthesized results with sources.',
+            'Search the web via Exa. Returns a list of relevant URLs with titles and snippets.',
+            'Use for broad research, multiple perspectives, or finding specific sources.',
+            'For direct factual answers with synthesized citations, use `exa_answer` instead.',
+            '',
+            '## Output Format',
+            '```',
+            '# web_search: "query" — 3 result(s)',
+            '',
+            '1. Title of the Result',
+            '   https://example.com/page · Author Name',
+            '   A brief excerpt from the page containing the relevant information...',
+            '',
+            '2. Another Title',
+            '   https://...',
+            '   ...',
+            '```',
             '',
             '## Parameters',
-            '- `query` (string)            Single search query. Use only for simple lookups.',
-            '- `queries` (string[])       2-4 varied-angle queries for broader coverage. PREFERRED over `query`.',
-            '- `numResults` (number)      Results per query. Default 5. MAX 10 (Exa free-plan cap).',
-            '- `type` (string)           Search type: "auto" (default), "fast", "instant", "deep-lite", "deep", "deep-reasoning".',
-            '                              Use "deep" for complex multi-step queries (4-15s latency). "auto" is best for most cases.',
-            '- `category` (string)       Scope results: "company", "research paper", "news", "personal site", "financial report", "people".',
-            '- `recency` (string)        Filter by publish date: "day", "week", "month", "year".',
-            '- `domains` (string[])       Include or exclude domains. Prefix with `-` to exclude, e.g. ["github.com", "-pinterest.com"].',
-            '- `includeText` (string)    String that must be present in webpage text (max 1 string, up to 5 words).',
-            '- `excludeText` (string)    String that must not be present in webpage text (max 1 string, up to 5 words).',
+            '| Param | Type | Default | Description |',
+            '|-------|------|---------|-------------|',
+            '| `query` | string | - | Single search query. Use only for simple lookups. |',
+            '| `queries` | string[] | - | 2-4 varied-angle queries. PREFERRED over `query` for better coverage. |',
+            '| `numResults` | number | 5 | Results per query. MAX 10. |',
+            '| `type` | string | "auto" | "auto" (best for most), "fast", "instant", "deep-lite", "deep", "deep-reasoning". |',
+            '| `category` | string | - | "company", "research paper", "news", "personal site", "financial report", "people". |',
+            '| `recency` | string | - | "day", "week", "month", "year". |',
+            '| `domains` | string[] | - | Include or exclude domains. Prefix with `-` to exclude (e.g. ["github.com", "-pinterest.com"]). |',
+            '| `includeText` | string | - | String that MUST be in page text (max 5 words). |',
+            '| `excludeText` | string | - | String that MUST NOT be in page text (max 5 words). |',
             '',
-            '## Best Practices',
-            '1. ALWAYS prefer `queries` (plural) with 2-4 varied angles over a single `query`.',
-            '   Good: queries: ["rust async runtime comparison", "tokio vs async-std performance", "rust async best practices"]',
-            '   Bad:  query: "rust"',
-            '2. Keep `numResults` at 5 (default). Never exceed 10 — silently capped.',
-            '3. Use `recency: "month"` or `"week"` for time-sensitive topics (crypto, news, market data).',
-            '4. Use `domains` to scope to authoritative sources or exclude noise.',
-            '5. Use `category: "news"` for current events, `"research paper"` for academic content.',
-            '6. Use `type: "deep"` for complex research questions requiring multi-step reasoning (4-15s latency).',
-            '7. Use `includeText`/`excludeText` to filter by page content (max 5 words each).',
-            '8. After search, use `fetch_content` to read full content of relevant URLs.',
-            '',
-            '## Anti-Patterns',
-            '- Single vague query like { query: "crypto" } — too broad, low signal.',
-            '- numResults > 10 — silently capped, wastes API budget.',
-            '- Ignoring `recency` for fast-moving topics.',
-            '- Using `type: "deep"` for simple lookups — unnecessary latency.',
+            '## Limitations',
+            '- Does not return full page content. Use `fetch_content` on the returned URLs to read complete pages.',
+            '- `numResults` > 10 is an error (Exa free-plan cap).',
+            '- `includeText` and `excludeText` are limited to 5 words max.',
+            '- `type: "deep"` has 4-15s latency. Use "auto" unless deep reasoning is strictly required.',
         ].join('\n'),
         promptSnippet:
-            'Search the web via Exa for research; ALWAYS prefer `queries` (2-4 varied angles) over a single `query`; keep numResults ≤ 10; use `recency` for time-sensitive topics; use `category` to scope results; use `type: "deep"` for complex research; follow up with fetch_content for full page content.',
+            'Broad web search via Exa. ALWAYS prefer `queries` (2-4 varied angles) over single `query`. Follow up with `fetch_content` for full pages.',
         promptGuidelines: [
-            'Prefer `queries` (plural) with 2-4 varied angles over a single `query` for broader coverage. Example: queries: ["rust async runtime comparison", "tokio vs async-std performance", "rust async best practices"].',
-            'Keep `numResults` at the default 5. Never exceed 10 — results are silently capped by the Exa free-plan limit.',
-            'Use `recency` ("day", "week", "month", "year") for time-sensitive topics such as crypto prices, breaking news, or library releases.',
-            'Use `domains` to scope to authoritative sources (e.g. ["github.com", "stackoverflow.com"]) or exclude noise (e.g. ["-pinterest.com", "-medium.com"]).',
-            'Use `category` to scope results: "news" for current events, "research paper" for academic content, "company" for company pages, "financial report" for SEC filings.',
-            'Use `type: "deep"` for complex multi-step research questions requiring reasoning (4-15s latency). Use "auto" (default) for most other cases.',
-            'Use `includeText`/`excludeText` to filter results by page content (max 1 string, up to 5 words each). Example: includeText: "benchmark results".',
-            'After searching, use `fetch_content` on the most relevant URLs to read full page content.',
-            'Avoid single vague queries like { query: "crypto" } — too broad, low signal. Always provide enough context in each query string.',
+            'DECISION: web_search vs exa_answer?',
+            '  - Need multiple sources/broad exploration -> web_search',
+            '  - Need one direct factual answer with citations -> exa_answer',
+            '',
+            'QUERY STRATEGY:',
+            '  - ALWAYS prefer `queries` (plural) with 2-4 varied angles over a single `query`.',
+            '  - GOOD: { queries: ["rust async runtime comparison", "tokio vs async-std benchmarks", "rust async best practices 2024"] }',
+            '  - BAD:  { query: "rust" }',
+            '',
+            'FILTERING:',
+            '  - Time-sensitive (crypto, news, releases): { recency: "week" }',
+            '  - Source type: { category: "news" } or { category: "research paper" }',
+            '  - Domain control: { domains: ["github.com", "-medium.com"] }',
+            '  - Content presence: { includeText: "benchmark results" } (max 5 words)',
+            '',
+            'SEARCH DEPTH:',
+            '  - Default: { type: "auto" } (fast, good for most lookups)',
+            '  - Complex multi-step reasoning: { type: "deep" } (expect 4-15s latency)',
+            '',
+            'FOLLOW-UP:',
+            '  - Search returns titles and snippets ONLY.',
+            '  - To analyze, extract data, or read full context, pass the URLs to `fetch_content`.',
         ],
         parameters: Type.Object({
-            query: Type.Optional(Type.String()),
-            queries: Type.Optional(Type.Array(Type.String())),
-            numResults: Type.Optional(Type.Number()),
+            query: Type.Optional(
+                Type.String({
+                    description: 'Single search query. Use only for simple, targeted lookups.',
+                }),
+            ),
+            queries: Type.Optional(
+                Type.Array(Type.String(), {
+                    description:
+                        '2-4 varied-angle queries for broader coverage. Preferred over `query`.',
+                    minItems: 2,
+                    maxItems: 4,
+                }),
+            ),
+            numResults: Type.Optional(
+                Type.Number({
+                    description: 'Number of results to return per query.',
+                    minimum: 1,
+                    maximum: 10,
+                    default: 5,
+                }),
+            ),
             type: Type.Optional(
-                Type.Union([
-                    Type.Literal('auto'),
-                    Type.Literal('fast'),
-                    Type.Literal('instant'),
-                    Type.Literal('deep-lite'),
-                    Type.Literal('deep'),
-                    Type.Literal('deep-reasoning'),
-                ]),
+                Type.Union(
+                    [
+                        Type.Literal('auto'),
+                        Type.Literal('fast'),
+                        Type.Literal('instant'),
+                        Type.Literal('deep-lite'),
+                        Type.Literal('deep'),
+                        Type.Literal('deep-reasoning'),
+                    ],
+                    {
+                        description:
+                            'Search depth. "auto" for most cases. "deep" for complex reasoning (slower).',
+                        default: 'auto',
+                    },
+                ),
             ),
             category: Type.Optional(
-                Type.Union([
-                    Type.Literal('company'),
-                    Type.Literal('research paper'),
-                    Type.Literal('news'),
-                    Type.Literal('personal site'),
-                    Type.Literal('financial report'),
-                    Type.Literal('people'),
-                ]),
+                Type.Union(
+                    [
+                        Type.Literal('company'),
+                        Type.Literal('research paper'),
+                        Type.Literal('news'),
+                        Type.Literal('personal site'),
+                        Type.Literal('financial report'),
+                        Type.Literal('people'),
+                    ],
+                    {
+                        description: 'Scope results to a specific category of web pages.',
+                    },
+                ),
             ),
             recency: Type.Optional(
-                Type.Union([
-                    Type.Literal('day'),
-                    Type.Literal('week'),
-                    Type.Literal('month'),
-                    Type.Literal('year'),
-                ]),
+                Type.Union(
+                    [
+                        Type.Literal('day'),
+                        Type.Literal('week'),
+                        Type.Literal('month'),
+                        Type.Literal('year'),
+                    ],
+                    {
+                        description: 'Filter by publish date. Use for time-sensitive topics.',
+                    },
+                ),
             ),
-            domains: Type.Optional(Type.Array(Type.String())),
-            includeText: Type.Optional(Type.String()),
-            excludeText: Type.Optional(Type.String()),
+            domains: Type.Optional(
+                Type.Array(Type.String(), {
+                    description:
+                        'Include or exclude domains. Prefix with "-" to exclude (e.g. ["-pinterest.com"]).',
+                }),
+            ),
+            includeText: Type.Optional(
+                Type.String({
+                    description: 'String that must be present in the webpage text (max 5 words).',
+                }),
+            ),
+            excludeText: Type.Optional(
+                Type.String({
+                    description:
+                        'String that must not be present in the webpage text (max 5 words).',
+                }),
+            ),
         }),
+
         async execute(params, signal): Promise<ToolTextResult> {
-            const texts = params.queries ?? (params.query ? [params.query] : []);
-            if (texts.length === 0) {
+            const countWords = (s: string) => s.trim().split(/\s+/).length;
+            // Validate text filters (API constraint)
+            if (params.includeText && countWords(params.includeText) > 5) {
                 return {
-                    content: [{ type: 'text', text: 'Error: provide `query` or `queries`.' }],
+                    content: [
+                        {
+                            type: 'text',
+                            text: `Error: \`includeText\` has a maximum limit of 5 words (provided ${countWords(params.includeText)}). Keep it concise, e.g., "benchmark results".`,
+                        },
+                    ],
+                };
+            }
+            if (params.excludeText && countWords(params.excludeText) > 5) {
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: `Error: \`excludeText\` has a maximum limit of 5 words (provided ${countWords(params.excludeText)}). Keep it concise, e.g., "login page".`,
+                        },
+                    ],
                 };
             }
 
+            // Validate numResults
+            if (
+                params.numResults !== undefined &&
+                (params.numResults < 1 || params.numResults > 10)
+            ) {
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: `Error: \`numResults\` must be between 1 and 10 (Exa API limit). You provided ${params.numResults}.`,
+                        },
+                    ],
+                };
+            }
+
+            const texts = params.queries ?? (params.query ? [params.query] : []);
+            if (texts.length === 0) {
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: 'Error: Provide either `query` (single) or `queries` (2-4 array).',
+                        },
+                    ],
+                };
+            }
+
+            if (texts.length > 4) {
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: [
+                                `Error: Maximum 4 queries per call (provided ${texts.length}).`,
+                                '',
+                                'Split your queries into smaller batches for better focus and to avoid rate limits.',
+                                `  Batch 1: ${texts
+                                    .slice(0, 4)
+                                    .map((q) => `"${q}"`)
+                                    .join(', ')}`,
+                                `  Batch 2: ${texts
+                                    .slice(4, 8)
+                                    .map((q) => `"${q}"`)
+                                    .join(', ')}`,
+                            ]
+                                .filter(Boolean)
+                                .join('\n'),
+                        },
+                    ],
+                };
+            }
             const results = await Promise.all(
                 texts.map((text) => service.search(toQuery(text, params), signal)),
             );
-
             const { text, totalUnique } = formatResults(results, texts);
             return {
                 content: [{ type: 'text', text }],

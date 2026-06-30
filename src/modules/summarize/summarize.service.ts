@@ -72,13 +72,18 @@ export class SummarizeService implements Summarizer {
         const style: SummaryStyle = options.style ?? 'sentences';
         const n = options.maxSentences ?? DEFAULT_SENTENCES;
         const model = options.model;
+        const systemPrompt = options.systemPrompt;
 
         const chunks = chunkText(trimmed, this.chunkConfig);
         let passes = 1;
         let summaryText: string;
 
         if (chunks.length <= 1) {
-            const r = await this.run(buildSummaryPrompt(trimmed, style, n), model, signal);
+            const r = await this.run(
+                buildSummaryPrompt(trimmed, style, n, systemPrompt),
+                model,
+                signal,
+            );
             if (!r.ok) return r;
             summaryText = r.value;
         } else {
@@ -99,7 +104,11 @@ export class SummarizeService implements Summarizer {
                 passes += 1;
             }
 
-            const r = await this.run(buildReducePrompt(merged, style, n), model, signal);
+            const r = await this.run(
+                buildReducePrompt(merged, style, n, systemPrompt),
+                model,
+                signal,
+            );
             if (!r.ok) return r;
             summaryText = r.value;
             passes += 1;

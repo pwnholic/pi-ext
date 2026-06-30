@@ -6,6 +6,12 @@ export interface SummarizeOptions {
     readonly style?: SummaryStyle;
     /** Override the LLM model id. */
     readonly model?: string;
+    /**
+     * Custom instruction guiding what the summary should focus on (replaces the
+     * default generic "summarize the following content" line). Length/format
+     * constraints from `style`/`maxSentences` are still applied.
+     */
+    readonly systemPrompt?: string;
 }
 
 export interface SummaryResult {
