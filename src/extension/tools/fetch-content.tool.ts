@@ -162,25 +162,31 @@ async function renderResult(
     const doc = result.value;
 
     const stored = docs[docIndex];
+    let failureNote: string | undefined;
 
     if (params.summarize) {
-        const summary = await trySummarize(deps.summarize, doc, params, signal);
-        if (summary !== undefined) {
+        const outcome = await trySummarize(deps.summarize, doc, params, signal);
+        if (outcome.summary !== undefined) {
             return responseId
-                ? `${summary}\n\n> Full page stored: get_content({ responseId: "${responseId}", index: ${docIndex} })`
-                : summary;
+                ? `${outcome.summary}\n\n> Full page stored: get_content({ responseId: "${responseId}", index: ${docIndex} })`
+                : outcome.summary;
         }
         // Summary failed: degrade to the normal compact rendering below (never
-        // dump the full page — that is what floods the context window).
+        // dump the full page). Surface a one-line reason for diagnostics.
+        failureNote = outcome.reason;
     }
 
     if (doc.content.length <= deps.inlineMaxChars) {
-        return formatDocument(doc);
+        return failureNote
+            ? `${formatDocument(doc)}\n\n> Summary unavailable: ${failureNote}`
+            : formatDocument(doc);
     }
 
     // Large page: return a navigable outline instead of flooding the context.
     if (!stored || !responseId) return formatDocument(doc);
-    return outlineBlock(stored, docIndex, responseId);
+    return failureNote
+        ? `${outlineBlock(stored, docIndex, responseId)}\n\n> Summary unavailable: ${failureNote}`
+        : outlineBlock(stored, docIndex, responseId);
 }
 
 function outlineBlock(stored: StoredDoc, docIndex: number, responseId: string): string {
@@ -202,13 +208,13 @@ function toStoredDoc(doc: FetchedDocument, maxSectionChars: number): StoredDoc {
     };
 }
 
-/** Returns the formatted summary, or undefined when summarization failed. */
+/** Returns the formatted summary, or a reason when summarization failed. */
 async function trySummarize(
     service: Summarizer,
     doc: FetchedDocument,
     params: FetchContentParams,
     signal: AbortSignal,
-): Promise<string | undefined> {
+): Promise<{ summary?: string; reason?: string }> {
     const r = await service.summarize(
         doc.content,
         {
@@ -220,9 +226,11 @@ async function trySummarize(
         signal,
     );
     if (r.ok) {
-        return `# Summary: ${doc.title || doc.url}\n<${doc.finalUrl}>\n\n${r.value.summary}`;
+        return {
+            summary: `# Summary: ${doc.title || doc.url}\n<${doc.finalUrl}>\n\n${r.value.summary}`,
+        };
     }
-    return undefined;
+    return { reason: `${r.error.kind}: ${r.error.message}` };
 }
 
 function formatDocument(doc: FetchedDocument): string {

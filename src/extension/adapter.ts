@@ -50,21 +50,25 @@ export function createHost(pi: ExtensionAPI, getCtx: GetExtensionContext): Exten
  * LLM client backed by Pi's active model via `@earendil-works/pi-ai/compat`.
  * Uses the model resolved on the current session context, so summarization
  * needs no separate API key. Returns provider_unavailable when no model is set.
+ *
+ * Auth resolution: the session model is typically authenticated through Pi's
+ * credential storage (/login, OAuth, subscription), not an env var. The compat
+ * `complete()` only resolves env-var API keys, so we must resolve the model's
+ * API key/headers from `ctx.modelRegistry` and inject them explicitly —
+ * otherwise the call goes out unauthenticated and silently fails.
  */
 export function createPiLlmClient(getCtx: GetExtensionContext): LlmClient {
     return {
         name: 'pi',
         isAvailable: () => Boolean(getCtx()?.model),
-        complete(request: CompletionRequest, signal?: AbortSignal): Promise<Result<string>> {
+        async complete(request: CompletionRequest, signal?: AbortSignal): Promise<Result<string>> {
             const ctx = getCtx();
             const model = ctx?.model;
             if (!model) {
-                return Promise.resolve(
-                    err(
-                        appError('provider_unavailable', 'No active model for summarization', {
-                            source: 'pi-llm',
-                        }),
-                    ),
+                return err(
+                    appError('provider_unavailable', 'No active model for summarization', {
+                        source: 'pi-llm',
+                    }),
                 );
             }
             const system = request.messages.find((m) => m.role === 'system')?.content;
@@ -72,6 +76,33 @@ export function createPiLlmClient(getCtx: GetExtensionContext): LlmClient {
                 .filter((m) => m.role !== 'system')
                 .map((m) => m.content)
                 .join('\n\n');
+
+            // Resolve auth from Pi's credential storage so the call is
+            // authenticated even when no env-var API key is set (the compat
+            // complete() only resolves env-var keys).
+            let auth: Record<string, unknown> = {};
+            if (ctx?.modelRegistry) {
+                try {
+                    const resolved = (await ctx.modelRegistry.getApiKeyAndHeaders(model)) as
+                        | {
+                              ok?: boolean;
+                              apiKey?: string;
+                              headers?: Record<string, string>;
+                              env?: Record<string, string>;
+                          }
+                        | undefined;
+                    if (resolved?.ok) {
+                        auth = {
+                            ...(resolved.apiKey ? { apiKey: resolved.apiKey } : {}),
+                            ...(resolved.headers ? { headers: resolved.headers } : {}),
+                            ...(resolved.env ? { env: resolved.env } : {}),
+                        };
+                    }
+                } catch {
+                    // Auth resolution failed; let complete() surface the real error.
+                }
+            }
+
             return fromPromise(
                 (async () => {
                     const assistant = await complete(
@@ -82,7 +113,7 @@ export function createPiLlmClient(getCtx: GetExtensionContext): LlmClient {
                                 { role: 'user', content: userContent, timestamp: Date.now() },
                             ],
                         },
-                        signal ? { signal } : undefined,
+                        { ...auth, ...(signal ? { signal } : {}) },
                     );
                     return assistant.content
                         .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
